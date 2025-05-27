@@ -1,0 +1,81 @@
+@startuml Go语言架构图
+
+package "Go语言项目" {
+  package "编译器和工具链" {
+    [go命令] as GoCmd
+    [编译器] as Compiler
+    [链接器] as Linker
+    [格式化工具] as Fmt
+    [静态分析] as Vet
+  }
+  
+  package "运行时" {
+    [内存管理] as MemMgr
+    [GC] as GC
+    [调度器] as Scheduler
+    [类型系统] as TypeSystem
+  }
+  
+  package "标准库" {
+    [net] as Net
+    [crypto] as Crypto
+    [encoding] as Encoding
+    [io] as IO
+    [sync] as Sync
+    [os] as OS
+    [time] as Time
+    [context] as Context
+    [database] as DB
+  }
+  
+  package "文档系统" {
+    [go/doc] as GoDoc
+    [go/doc/comment] as DocComment
+  }
+}
+
+' 关系
+GoCmd --> Compiler : 调用
+GoCmd --> Linker : 调用
+GoCmd --> Fmt : 调用
+GoCmd --> Vet : 调用
+
+Compiler --> TypeSystem : 使用
+Linker --> MemMgr : 配置
+
+Net --> OS : 依赖
+DB --> Context : 使用
+Sync --> Scheduler : 基于
+
+GoDoc --> DocComment : 使用
+
+' 编译流程
+note right of GoCmd
+  go build流程:
+  1. 解析源代码
+  2. 类型检查
+  3. 生成中间代码
+  4. 优化
+  5. 生成机器码
+  6. 链接
+end note
+
+' 运行时特性
+note right of Scheduler
+  Go调度器特性:
+  - 协作式调度
+  - 工作窃取
+  - M:N线程模型
+  - 系统调用处理
+end note
+
+' 垃圾回收
+note right of GC
+  垃圾回收特性:
+  - 并发标记清除
+  - 写屏障
+  - 三色标记法
+  - 最小停顿时间
+end note
+
+@enduml

@@ -1,0 +1,164 @@
+@startuml Go测试框架实现架构
+
+package "Go测试框架 (src/)" {
+  package "测试命令 (src/cmd/go/internal/)" {
+    [test命令 (src/cmd/go/internal/test/test.go)] as TestCmd
+    [测试标志 (src/cmd/go/internal/test/testflag.go)] as TestFlag
+    [测试执行 (src/cmd/go/internal/test/test.go)] as TestExec
+    [测试二进制生成 (src/cmd/go/internal/test/testmain.go)] as TestMainGen
+    [测试结果解析 (src/cmd/go/internal/test/json.go)] as TestResult
+  }
+  
+  package "测试库 (src/testing/)" {
+    [testing包 (src/testing/testing.go)] as Testing
+    [T类型 (src/testing/testing.go)] as T
+    [B类型 (src/testing/benchmark.go)] as B
+    [M类型 (src/testing/testing.go)] as M
+    [TB接口 (src/testing/testing.go)] as TB
+    [测试主函数 (src/testing/match.go)] as TestMain
+    [测试过滤 (src/testing/match.go)] as TestMatch
+  }
+  
+  package "覆盖率 (src/)" {
+    [cover命令 (src/cmd/cover/cover.go)] as CoverCmd
+    [覆盖率工具 (src/cmd/go/internal/test/cover.go)] as CoverTool
+    [覆盖率分析 (src/cmd/go/internal/test/cover.go)] as CoverAnalysis
+    [覆盖率报告 (src/cmd/go/internal/test/cover.go)] as CoverReport
+    [覆盖率检测 (src/cmd/cover/cover.go)] as CoverInstr
+  }
+  
+  package "测试辅助 (src/testing/)" {
+    [quick包 (src/testing/quick/quick.go)] as Quick
+    [iotest包 (src/testing/iotest/reader.go)] as IOTest
+    [fstest包 (src/testing/fstest/mapfs.go)] as FSTest
+    [httptest包 (src/testing/httptest/server.go)] as HTTPTest
+    [slogtest包 (src/testing/slogtest/slogtest.go)] as SlogTest
+  }
+  
+  package "模糊测试 (src/)" {
+    [fuzzing引擎 (src/internal/fuzz/fuzz.go)] as FuzzEngine
+    [fuzzing语料库 (src/internal/fuzz/corpus.go)] as FuzzCorpus
+    [fuzzing覆盖率 (src/internal/fuzz/coverage.go)] as FuzzCoverage
+    [fuzzing变异 (src/internal/fuzz/mutator.go)] as FuzzMutator
+    [fuzzing最小化 (src/internal/fuzz/minimize.go)] as FuzzMinimize
+  }
+  
+  package "测试工具集成 (src/cmd/go/internal/)" {
+    [race检测 (src/cmd/go/internal/test/test.go)] as RaceTest
+    [pprof集成 (src/cmd/go/internal/test/test.go)] as PprofTest
+    [trace集成 (src/cmd/go/internal/test/test.go)] as TraceTest
+    [并行测试 (src/cmd/go/internal/test/test.go)] as ParallelTest
+    [测试缓存 (src/cmd/go/internal/test/test.go)] as TestCache
+  }
+}
+
+' 测试命令关系
+TestCmd --> TestFlag : 解析
+TestCmd --> TestExec : 执行
+TestCmd --> TestMainGen : 生成
+TestCmd --> TestResult : 处理
+
+' 测试库关系
+TestMainGen --> Testing : 使用
+Testing --> T : 定义
+Testing --> B : 定义
+Testing --> M : 定义
+T --> TB : 实现
+B --> TB : 实现
+Testing --> TestMain : 支持
+Testing --> TestMatch : 使用
+
+' 覆盖率关系
+TestCmd --> CoverTool : 使用
+CoverTool --> CoverCmd : 调用
+CoverTool --> CoverAnalysis : 处理
+CoverTool --> CoverReport : 生成
+CoverCmd --> CoverInstr : 执行
+
+' 测试辅助关系
+Testing --> Quick : 支持
+Testing --> IOTest : 支持
+Testing --> FSTest : 支持
+Testing --> HTTPTest : 支持
+Testing --> SlogTest : 支持
+
+' 模糊测试关系
+Testing --> FuzzEngine : 使用
+FuzzEngine --> FuzzCorpus : 管理
+FuzzEngine --> FuzzCoverage : 收集
+FuzzEngine --> FuzzMutator : 使用
+FuzzEngine --> FuzzMinimize : 执行
+
+' 测试工具集成关系
+TestCmd --> RaceTest : 支持
+TestCmd --> PprofTest : 支持
+TestCmd --> TraceTest : 支持
+TestCmd --> ParallelTest : 支持
+TestCmd --> TestCache : 使用
+
+note right of TestCmd
+  test命令:
+  - 测试发现
+  - 测试编译
+  - 测试执行
+  - 结果收集
+end note
+
+note right of Testing
+  testing包:
+  - 测试框架核心
+  - 测试函数运行
+  - 断言支持
+  - 日志记录
+end note
+
+note right of T
+  T类型:
+  - 测试上下文
+  - 错误报告
+  - 日志记录
+  - 并行控制
+  - 清理函数
+end note
+
+note right of B
+  B类型:
+  - 基准测试上下文
+  - 计时功能
+  - 内存统计
+  - 并行控制
+end note
+
+note right of CoverTool
+  覆盖率工具:
+  - 代码插桩
+  - 覆盖率数据收集
+  - 覆盖率报告生成
+  - 多种报告格式
+end note
+
+note right of FuzzEngine
+  模糊测试引擎:
+  - 输入生成
+  - 语料库管理
+  - 覆盖率引导
+  - 崩溃最小化
+end note
+
+note right of HTTPTest
+  httptest包:
+  - HTTP测试服务器
+  - 请求记录
+  - 响应模拟
+  - TLS支持
+end note
+
+note right of ParallelTest
+  并行测试:
+  - 测试并行执行
+  - 资源限制
+  - 超时控制
+  - 隔离保证
+end note
+
+@enduml

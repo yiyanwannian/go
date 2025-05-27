@@ -1,0 +1,135 @@
+@startuml Go网络库实现架构
+
+package "Go网络库 (src/net/)" {
+  [net包入口 (src/net/net.go)] as NetEntry
+  
+  package "网络基础 (src/net/)" {
+    [IP地址 (src/net/ip.go)] as IP
+    [接口地址 (src/net/interface.go)] as Interface
+    [DNS解析 (src/net/dnsclient.go)] as DNS
+    [地址解析 (src/net/ipsock.go)] as AddrResolve
+    [网络错误 (src/net/net.go)] as NetError
+  }
+  
+  package "Socket实现 (src/net/)" {
+    [Socket (src/net/sock.go)] as Socket
+    [TCP Socket (src/net/tcpsock.go)] as TCPSocket
+    [UDP Socket (src/net/udpsock.go)] as UDPSocket
+    [Unix Socket (src/net/unixsock.go)] as UnixSocket
+    [Raw Socket (src/net/rawconn.go)] as RawSocket
+  }
+  
+  package "连接抽象 (src/net/)" {
+    [Conn接口 (src/net/net.go)] as Conn
+    [Listener接口 (src/net/net.go)] as Listener
+    [PacketConn接口 (src/net/net.go)] as PacketConn
+    [Dialer (src/net/dial.go)] as Dialer
+    [超时控制 (src/net/timeout.go)] as Timeout
+  }
+  
+  package "HTTP实现 (src/net/http/)" {
+    [HTTP服务器 (src/net/http/server.go)] as HTTPServer
+    [HTTP客户端 (src/net/http/client.go)] as HTTPClient
+    [HTTP传输 (src/net/http/transport.go)] as HTTPTransport
+    [HTTP请求 (src/net/http/request.go)] as HTTPRequest
+    [HTTP响应 (src/net/http/response.go)] as HTTPResponse
+    [HTTP处理器 (src/net/http/server.go)] as HTTPHandler
+    [HTTP路由 (src/net/http/server.go)] as HTTPMux
+  }
+  
+  package "底层实现 (src/internal/poll/)" {
+    [FD (src/internal/poll/fd_unix.go, src/internal/poll/fd_windows.go)] as FD
+    [网络轮询器 (src/runtime/netpoll.go)] as NetPoller
+    [IO多路复用 (src/internal/poll/fd_poll_runtime.go)] as IOMultiplex
+    [非阻塞IO (src/internal/poll/fd_unix.go)] as NonblockingIO
+  }
+}
+
+' 网络基础关系
+NetEntry --> IP : 包含
+NetEntry --> Interface : 包含
+NetEntry --> DNS : 包含
+NetEntry --> AddrResolve : 使用
+NetEntry --> NetError : 使用
+
+' Socket关系
+NetEntry --> Socket : 包含
+Socket <|-- TCPSocket : 实现
+Socket <|-- UDPSocket : 实现
+Socket <|-- UnixSocket : 实现
+Socket <|-- RawSocket : 实现
+
+' 连接抽象关系
+NetEntry --> Conn : 定义
+NetEntry --> Listener : 定义
+NetEntry --> PacketConn : 定义
+NetEntry --> Dialer : 包含
+NetEntry --> Timeout : 使用
+TCPSocket --> Conn : 实现
+TCPSocket --> Listener : 实现
+UDPSocket --> PacketConn : 实现
+UnixSocket --> Conn : 实现
+UnixSocket --> Listener : 实现
+
+' HTTP关系
+HTTPServer --> Listener : 使用
+HTTPClient --> Dialer : 使用
+HTTPClient --> HTTPTransport : 使用
+HTTPTransport --> TCPSocket : 使用
+HTTPServer --> HTTPHandler : 使用
+HTTPServer --> HTTPMux : 使用
+HTTPServer --> HTTPRequest : 处理
+HTTPServer --> HTTPResponse : 生成
+HTTPClient --> HTTPRequest : 创建
+HTTPClient --> HTTPResponse : 接收
+
+' 底层实现关系
+Socket --> FD : 使用
+FD --> NetPoller : 使用
+FD --> IOMultiplex : 使用
+FD --> NonblockingIO : 使用
+
+note right of NetEntry
+  net包入口:
+  - 网络接口
+  - 地址解析
+  - 连接建立
+  - 错误处理
+end note
+
+note right of FD
+  文件描述符抽象:
+  - 非阻塞IO
+  - 超时控制
+  - 事件通知
+  - 平台特定实现
+end note
+
+note right of NetPoller
+  网络轮询器:
+  - 基于epoll/kqueue/IOCP
+  - 与调度器集成
+  - 非阻塞网络IO
+  - 高效事件通知
+end note
+
+note right of HTTPServer
+  HTTP服务器:
+  - 请求解析
+  - 路由分发
+  - 处理器调用
+  - 响应生成
+  - 并发处理
+end note
+
+note right of HTTPTransport
+  HTTP传输:
+  - 连接池
+  - 请求发送
+  - 响应接收
+  - 重定向处理
+  - 代理支持
+  - HTTP/2支持
+end note
+
+@enduml

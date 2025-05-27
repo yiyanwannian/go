@@ -1,0 +1,107 @@
+@startuml Go垃圾回收器实现架构
+
+package "Go垃圾回收器 (src/runtime/)" {
+  [GC入口 (src/runtime/mgc.go)] as GCEntry
+  
+  package "标记阶段 (src/runtime/)" {
+    [标记工作器 (src/runtime/mgcmark.go)] as MarkWorker
+    [并发标记 (src/runtime/mgcmark.go)] as ConcurrentMark
+    [辅助标记 (src/runtime/mgcmark.go)] as AssistMark
+    [标记终止 (src/runtime/mgcmark.go)] as MarkTermination
+  }
+  
+  package "清除阶段 (src/runtime/)" {
+    [后台清除 (src/runtime/mgcsweep.go)] as BackgroundSweep
+    [按需清除 (src/runtime/mgcsweep.go)] as OnDemandSweep
+    [span清除 (src/runtime/mgcsweep.go)] as SpanSweep
+  }
+  
+  package "内存回收 (src/runtime/)" {
+    [页回收 (src/runtime/mgcscavenge.go)] as PageScavenge
+    [后台回收 (src/runtime/mgcscavenge.go)] as BackgroundScavenge
+    [内存归还 (src/runtime/mgcscavenge.go)] as MemoryRelease
+  }
+  
+  package "写屏障 (src/runtime/)" {
+    [写屏障缓冲 (src/runtime/mbarrier.go)] as WriteBarrierBuf
+    [写屏障执行 (src/runtime/mbarrier.go)] as WriteBarrierExec
+    [混合写屏障 (src/runtime/mbarrier.go)] as HybridBarrier
+  }
+  
+  package "GC触发 (src/runtime/)" {
+    [周期性触发 (src/runtime/mgc.go)] as PeriodicTrigger
+    [内存阈值触发 (src/runtime/mgc.go)] as MemoryTrigger
+    [显式触发 (src/runtime/mgc.go)] as ExplicitTrigger
+  }
+  
+  package "GC调优 (src/runtime/)" {
+    [GC百分比 (src/runtime/mgc.go)] as GCPercent
+    [GC控制器 (src/runtime/mgc.go)] as GCController
+    [CPU利用率控制 (src/runtime/mgc.go)] as CPUControl
+    [GOGC环境变量 (src/runtime/mgc.go)] as GOGC
+  }
+}
+
+' GC流程关系
+GCEntry --> PeriodicTrigger : 触发
+GCEntry --> MemoryTrigger : 触发
+GCEntry --> ExplicitTrigger : 触发
+GCEntry --> MarkWorker : 启动
+MarkWorker --> ConcurrentMark : 执行
+MarkWorker --> AssistMark : 执行
+ConcurrentMark --> MarkTermination : 完成后
+MarkTermination --> BackgroundSweep : 启动
+BackgroundSweep --> SpanSweep : 执行
+OnDemandSweep --> SpanSweep : 执行
+BackgroundScavenge --> PageScavenge : 执行
+PageScavenge --> MemoryRelease : 执行
+
+' 写屏障关系
+ConcurrentMark --> WriteBarrierExec : 依赖
+WriteBarrierExec --> WriteBarrierBuf : 使用
+WriteBarrierExec --> HybridBarrier : 实现
+
+' 控制关系
+GCEntry --> GCController : 使用
+GCController --> GCPercent : 配置
+GCController --> CPUControl : 实现
+GCController --> GOGC : 配置
+
+note right of GCEntry
+  GC入口:
+  - 启动标记阶段
+  - 协调各阶段转换
+  - 管理GC状态
+end note
+
+note right of ConcurrentMark
+  并发标记:
+  - 三色标记法
+  - 增量标记
+  - 写屏障保护
+  - 根对象扫描
+end note
+
+note right of HybridBarrier
+  混合写屏障:
+  - Dijkstra插入屏障
+  - Yuasa删除屏障
+  - 减少STW时间
+end note
+
+note right of GCController
+  GC控制器:
+  - 自适应GC频率
+  - 内存增长预测
+  - CPU利用率控制
+  - 目标延迟控制
+end note
+
+note right of BackgroundSweep
+  后台清除:
+  - 并发执行
+  - 按需触发
+  - 内存回收
+end note
+
+@enduml

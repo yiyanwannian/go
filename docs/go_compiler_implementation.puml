@@ -1,0 +1,173 @@
+@startuml Go编译器实现架构
+
+package "Go编译器 (src/cmd/compile/)" {
+  [编译器入口 (src/cmd/compile/main.go)] as CompilerEntry
+  
+  package "前端 (src/cmd/compile/internal/)" {
+    [词法分析 (src/cmd/compile/internal/syntax/scanner.go)] as Scanner
+    [语法分析 (src/cmd/compile/internal/syntax/parser.go)] as Parser
+    [AST构建 (src/cmd/compile/internal/syntax/nodes.go)] as AST
+    [类型检查 (src/cmd/compile/internal/types2/)] as TypeCheck
+    [导入处理 (src/cmd/compile/internal/typecheck/import.go)] as Import
+    [常量折叠 (src/cmd/compile/internal/typecheck/const.go)] as ConstFolding
+  }
+  
+  package "中间表示 (src/cmd/compile/internal/)" {
+    [IR构建 (src/cmd/compile/internal/ir/)] as IRBuild
+    [IR节点 (src/cmd/compile/internal/ir/node.go)] as IRNode
+    [IR遍历 (src/cmd/compile/internal/ir/visit.go)] as IRVisit
+    [IR打印 (src/cmd/compile/internal/ir/fmt.go)] as IRPrint
+    [IR转换 (src/cmd/compile/internal/ir/transform.go)] as IRTransform
+  }
+  
+  package "优化 (src/cmd/compile/internal/)" {
+    [逃逸分析 (src/cmd/compile/internal/escape/)] as Escape
+    [内联 (src/cmd/compile/internal/inline/)] as Inline
+    [死代码消除 (src/cmd/compile/internal/deadcode/)] as DeadCode
+    [边界检查消除 (src/cmd/compile/internal/bounds/)] as BoundsCheck
+    [通用优化 (src/cmd/compile/internal/opt/)] as GenericOpt
+  }
+  
+  package "SSA生成 (src/cmd/compile/internal/ssa/)" {
+    [SSA构建 (src/cmd/compile/internal/ssa/builder.go)] as SSABuild
+    [SSA规则 (src/cmd/compile/internal/ssa/gen/)] as SSARules
+    [SSA优化 (src/cmd/compile/internal/ssa/opt.go)] as SSAOpt
+    [SSA降低 (src/cmd/compile/internal/ssa/lower.go)] as SSALower
+    [SSA调度 (src/cmd/compile/internal/ssa/schedule.go)] as SSASchedule
+    [SSA寄存器分配 (src/cmd/compile/internal/ssa/regalloc.go)] as RegAlloc
+  }
+  
+  package "后端 (src/cmd/compile/internal/)" {
+    [代码生成 (src/cmd/compile/internal/ssa/gen/)] as CodeGen
+    [目标文件生成 (src/cmd/compile/internal/obj/)] as ObjGen
+    [符号表 (src/cmd/compile/internal/obj/sym.go)] as SymTable
+    [重定位 (src/cmd/compile/internal/obj/link.go)] as Reloc
+    [调试信息 (src/cmd/compile/internal/dwarf/)] as Dwarf
+  }
+  
+  package "平台特定 (src/cmd/compile/internal/)" {
+    [AMD64 (src/cmd/compile/internal/amd64/)] as AMD64
+    [ARM64 (src/cmd/compile/internal/arm64/)] as ARM64
+    [x86 (src/cmd/compile/internal/x86/)] as X86
+    [ARM (src/cmd/compile/internal/arm/)] as ARM
+    [MIPS (src/cmd/compile/internal/mips/)] as MIPS
+    [PPC64 (src/cmd/compile/internal/ppc64/)] as PPC64
+    [WASM (src/cmd/compile/internal/wasm/)] as WASM
+  }
+}
+
+' 编译流程关系
+CompilerEntry --> Scanner : 调用
+Scanner --> Parser : 提供token
+Parser --> AST : 构建
+AST --> TypeCheck : 分析
+TypeCheck --> Import : 处理
+TypeCheck --> ConstFolding : 执行
+TypeCheck --> IRBuild : 转换
+
+' IR关系
+IRBuild --> IRNode : 创建
+IRBuild --> IRVisit : 使用
+IRBuild --> IRPrint : 调试
+IRBuild --> IRTransform : 应用
+
+' 优化关系
+IRTransform --> Escape : 应用
+IRTransform --> Inline : 应用
+IRTransform --> DeadCode : 应用
+IRTransform --> BoundsCheck : 应用
+IRTransform --> GenericOpt : 应用
+
+' SSA关系
+IRTransform --> SSABuild : 转换
+SSABuild --> SSARules : 应用
+SSABuild --> SSAOpt : 执行
+SSAOpt --> SSALower : 后接
+SSALower --> SSASchedule : 后接
+SSASchedule --> RegAlloc : 后接
+
+' 后端关系
+RegAlloc --> CodeGen : 生成
+CodeGen --> ObjGen : 输出
+ObjGen --> SymTable : 使用
+ObjGen --> Reloc : 生成
+ObjGen --> Dwarf : 生成
+
+' 平台特定关系
+CodeGen --> AMD64 : 使用
+CodeGen --> ARM64 : 使用
+CodeGen --> X86 : 使用
+CodeGen --> ARM : 使用
+CodeGen --> MIPS : 使用
+CodeGen --> PPC64 : 使用
+CodeGen --> WASM : 使用
+
+note right of CompilerEntry
+  编译器入口:
+  - 解析命令行参数
+  - 初始化编译环境
+  - 协调编译流程
+end note
+
+note right of Scanner
+  词法分析:
+  - 源代码扫描
+  - 标记识别
+  - 处理注释
+  - 处理字面量
+end note
+
+note right of Parser
+  语法分析:
+  - 构建语法树
+  - 错误恢复
+  - 语法糖处理
+end note
+
+note right of TypeCheck
+  类型检查:
+  - 类型推导
+  - 类型兼容性
+  - 常量类型
+  - 接口实现检查
+end note
+
+note right of Escape
+  逃逸分析:
+  - 堆分配决策
+  - 指针逃逸检测
+  - 闭包变量分析
+end note
+
+note right of SSABuild
+  SSA构建:
+  - 控制流图
+  - 基本块
+  - 值编号
+  - 指令选择
+end note
+
+note right of SSAOpt
+  SSA优化:
+  - 死代码消除
+  - 常量传播
+  - 公共子表达式消除
+  - 循环优化
+end note
+
+note right of RegAlloc
+  寄存器分配:
+  - 寄存器干涉图
+  - 寄存器着色
+  - 溢出处理
+  - 调用约定
+end note
+
+note right of CodeGen
+  代码生成:
+  - 指令选择
+  - 指令调度
+  - 平台特定优化
+end note
+
+@enduml

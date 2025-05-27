@@ -1,0 +1,157 @@
+@startuml Go垃圾回收器实现架构
+
+package "Go垃圾回收器 (src/runtime/)" {
+  [GC入口 (src/runtime/mgc.go)] as GCEntry
+  
+  package "GC阶段 (src/runtime/)" {
+    [标记准备 (src/runtime/mgc.go)] as MarkPrepare
+    [并发标记 (src/runtime/mgc.go)] as ConcurrentMark
+    [标记终止 (src/runtime/mgc.go)] as MarkTermination
+    [清扫 (src/runtime/mgcsweep.go)] as Sweep
+    [辅助GC (src/runtime/mgc.go)] as AssistGC
+  }
+  
+  package "GC触发器 (src/runtime/)" {
+    [堆大小触发 (src/runtime/mgc.go)] as HeapTrigger
+    [周期性触发 (src/runtime/proc.go)] as PeriodicTrigger
+    [显式触发 (src/runtime/mgc.go)] as ExplicitTrigger
+    [GC百分比 (src/runtime/mgc.go)] as GCPercent
+    [目标堆大小 (src/runtime/mgc.go)] as TargetHeap
+  }
+  
+  package "标记算法 (src/runtime/)" {
+    [三色标记 (src/runtime/mgc.go)] as TriColor
+    [写屏障 (src/runtime/mbarrier.go)] as WriteBarrier
+    [混合写屏障 (src/runtime/mbarrier.go)] as HybridBarrier
+    [栈扫描 (src/runtime/mgcmark.go)] as StackScan
+    [全局队列 (src/runtime/mgcmark.go)] as GlobalQueue
+    [工作窃取 (src/runtime/mgcmark.go)] as WorkStealing
+  }
+  
+  package "内存分配器集成 (src/runtime/)" {
+    [mcache (src/runtime/mcache.go)] as MCache
+    [mcentral (src/runtime/mcentral.go)] as MCentral
+    [mheap (src/runtime/mheap.go)] as MHeap
+    [mspan (src/runtime/mspan.go)] as MSpan
+    [位图标记 (src/runtime/mgcmark.go)] as BitMap
+    [对象分配 (src/runtime/malloc.go)] as Allocation
+  }
+  
+  package "调度器集成 (src/runtime/)" {
+    [GC工作线程 (src/runtime/mgc.go)] as GCWorker
+    [标记辅助 (src/runtime/mgc.go)] as MarkAssist
+    [清扫辅助 (src/runtime/mgcsweep.go)] as SweepAssist
+    [STW (src/runtime/mgc.go)] as STW
+    [抢占 (src/runtime/preempt.go)] as Preempt
+  }
+  
+  package "GC统计 (src/runtime/)" {
+    [GC周期 (src/runtime/mgc.go)] as GCCycle
+    [GC阶段时间 (src/runtime/mgc.go)] as GCPhaseTime
+    [内存统计 (src/runtime/mstats.go)] as MemStats
+    [GC调试 (src/runtime/mgcscavenge.go)] as GCDebug
+    [GC追踪 (src/runtime/mgctrace.go)] as GCTrace
+  }
+}
+
+' GC入口关系
+GCEntry --> MarkPrepare : 启动
+GCEntry --> HeapTrigger : 检查
+GCEntry --> GCPercent : 使用
+GCEntry --> GCWorker : 启动
+
+' GC阶段关系
+MarkPrepare --> STW : 使用
+MarkPrepare --> WriteBarrier : 启用
+ConcurrentMark --> TriColor : 使用
+ConcurrentMark --> WorkStealing : 使用
+MarkTermination --> STW : 使用
+Sweep --> SweepAssist : 使用
+AssistGC --> MarkAssist : 使用
+
+' GC触发器关系
+HeapTrigger --> TargetHeap : 计算
+PeriodicTrigger --> GCEntry : 调用
+ExplicitTrigger --> GCEntry : 调用
+GCPercent --> TargetHeap : 影响
+
+' 标记算法关系
+TriColor --> GlobalQueue : 使用
+TriColor --> BitMap : 使用
+WriteBarrier --> HybridBarrier : 实现
+StackScan --> Preempt : 使用
+WorkStealing --> GlobalQueue : 访问
+
+' 内存分配器集成关系
+MCache --> MCentral : 获取span
+MCentral --> MHeap : 获取span
+MHeap --> MSpan : 管理
+MSpan --> BitMap : 使用
+Allocation --> MCache : 使用
+
+' 调度器集成关系
+GCWorker --> ConcurrentMark : 执行
+MarkAssist --> ConcurrentMark : 辅助
+SweepAssist --> Sweep : 辅助
+STW --> Preempt : 使用
+
+' GC统计关系
+GCCycle --> GCPhaseTime : 记录
+GCPhaseTime --> MemStats : 更新
+GCDebug --> GCTrace : 使用
+
+note right of GCEntry
+  GC入口:
+  - 启动GC周期
+  - 协调各阶段
+  - 控制GC工作线程
+end note
+
+note right of TriColor
+  三色标记算法:
+  - 白色: 未访问
+  - 灰色: 已访问但子对象未扫描
+  - 黑色: 已访问且子对象已扫描
+  - 不变性条件维护
+end note
+
+note right of HybridBarrier
+  混合写屏障:
+  - Dijkstra插入屏障
+  - Yuasa删除屏障
+  - 保证并发标记正确性
+  - 减少STW时间
+end note
+
+note right of GCWorker
+  GC工作线程:
+  - 并发标记
+  - 工作量平衡
+  - 与调度器协作
+  - 辅助GC
+end note
+
+note right of STW
+  Stop-The-World:
+  - 最小化暂停时间
+  - 两次短暂STW
+  - 标记准备和终止阶段
+end note
+
+note right of GCPercent
+  GC控制参数:
+  - GOGC环境变量
+  - 默认100%
+  - 控制GC频率
+  - 内存使用与GC开销平衡
+end note
+
+note right of MemStats
+  内存统计:
+  - 堆大小
+  - GC次数
+  - GC暂停时间
+  - 内存分配统计
+end note
+
+@enduml

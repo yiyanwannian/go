@@ -1,0 +1,98 @@
+@startuml Go测试框架实现架构
+
+package "Go测试框架 (src/)" {
+  package "测试命令 (src/cmd/go/internal/)" {
+    [test命令 (src/cmd/go/internal/test/test.go)] as TestCmd
+    [测试标志 (src/cmd/go/internal/test/testflag.go)] as TestFlag
+    [测试执行 (src/cmd/go/internal/test/testmain.go)] as TestExec
+  }
+  
+  package "测试库 (src/testing/)" {
+    [测试核心 (src/testing/testing.go)] as TestCore
+    [基准测试 (src/testing/benchmark.go)] as Benchmark
+    [示例测试 (src/testing/example.go)] as Example
+    [测试辅助 (src/testing/helper.go)] as Helper
+    [测试日志 (src/testing/testing.go)] as TestLog
+    [测试标志 (src/testing/flag.go)] as TestingFlag
+    [测试主函数 (src/testing/main.go)] as TestMain
+  }
+  
+  package "测试覆盖率 (src/cmd/)" {
+    [覆盖率工具 (src/cmd/cover/cover.go)] as Cover
+    [覆盖率分析 (src/cmd/cover/func.go)] as CoverAnalysis
+    [HTML报告 (src/cmd/cover/html.go)] as CoverHTML
+  }
+  
+  package "模糊测试 (src/internal/fuzz/)" {
+    [模糊测试核心 (src/internal/fuzz/fuzz.go)] as Fuzz
+    [模糊测试引擎 (src/internal/fuzz/worker.go)] as FuzzWorker
+    [语料库管理 (src/internal/fuzz/corpus.go)] as FuzzCorpus
+    [覆盖率引导 (src/internal/fuzz/coverage.go)] as FuzzCoverage
+  }
+  
+  package "测试工具 (src/)" {
+    [快速测试 (src/testing/quick/quick.go)] as Quick
+    [HTTP测试 (src/net/http/httptest/)] as HTTPTest
+    [IO测试 (src/testing/iotest/)] as IOTest
+    [表格驱动测试 (src/testing/testing.go)] as TableTest
+  }
+}
+
+' 测试命令关系
+TestCmd --> TestFlag : 使用
+TestCmd --> TestExec : 使用
+TestExec --> TestCore : 生成测试main
+TestExec --> Cover : 集成
+
+' 测试库关系
+TestCore --> Benchmark : 包含
+TestCore --> Example : 包含
+TestCore --> Helper : 包含
+TestCore --> TestLog : 包含
+TestCore --> TestingFlag : 使用
+TestCore --> TestMain : 调用
+
+' 覆盖率关系
+Cover --> CoverAnalysis : 使用
+Cover --> CoverHTML : 使用
+
+' 模糊测试关系
+Fuzz --> FuzzWorker : 使用
+Fuzz --> FuzzCorpus : 使用
+Fuzz --> FuzzCoverage : 使用
+TestCore --> Fuzz : 支持
+
+note right of TestCmd
+  test命令实现:
+  1. 识别测试文件
+  2. 编译测试代码
+  3. 生成测试主函数
+  4. 执行测试
+  5. 收集结果
+end note
+
+note right of TestCore
+  测试框架核心:
+  - Test函数执行
+  - 测试状态管理
+  - 测试结果报告
+  - 并行测试支持
+end note
+
+note right of Benchmark
+  基准测试实现:
+  - 时间测量
+  - 内存分配统计
+  - 自动迭代次数
+  - 结果报告
+end note
+
+note right of Fuzz
+  模糊测试实现:
+  - 随机输入生成
+  - 语料库管理
+  - 覆盖率引导
+  - 错误最小化
+end note
+
+@enduml

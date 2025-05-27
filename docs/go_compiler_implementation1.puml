@@ -1,0 +1,87 @@
+@startuml Go编译器实现架构
+
+package "Go编译器 (src/cmd/compile/)" {
+  [主入口 (src/cmd/compile/main.go)] as CompilerMain
+  
+  package "前端 (src/cmd/compile/internal/)" {
+    [词法分析器 (src/cmd/compile/internal/syntax/scanner.go)] as Scanner
+    [语法分析器 (src/cmd/compile/internal/syntax/parser.go)] as Parser
+    [类型检查 (src/cmd/compile/internal/types2/)] as TypeChecker
+    [AST转换 (src/cmd/compile/internal/noder/)] as Noder
+  }
+  
+  package "中间表示 (src/cmd/compile/internal/)" {
+    [IR生成 (src/cmd/compile/internal/ir/)] as IR
+    [内联 (src/cmd/compile/internal/inline/)] as Inline
+    [逃逸分析 (src/cmd/compile/internal/escape/)] as Escape
+    [SSA生成 (src/cmd/compile/internal/ssa/gen.go)] as SSAGen
+  }
+  
+  package "后端 (src/cmd/compile/internal/)" {
+    [SSA优化 (src/cmd/compile/internal/ssa/compile.go)] as SSAOpt
+    [代码生成 (src/cmd/compile/internal/ssa/genssa.go)] as CodeGen
+    [机器码生成 (src/cmd/compile/internal/*/ssa.go)] as MachineCodeGen
+    [对象文件生成 (src/cmd/compile/internal/objw/)] as ObjGen
+  }
+  
+  package "辅助组件" {
+    [符号表 (src/cmd/compile/internal/types/)] as SymTab
+    [常量折叠 (src/cmd/compile/internal/constfold/)] as ConstFold
+    [调试信息 (src/cmd/compile/internal/dwarf/)] as Dwarf
+    [编译器标志 (src/cmd/compile/internal/base/flag.go)] as Flags
+  }
+}
+
+' 编译流程
+CompilerMain --> Scanner : 调用
+Scanner --> Parser : 提供token
+Parser --> TypeChecker : 提供AST
+TypeChecker --> Noder : 类型检查后的AST
+Noder --> IR : 转换为IR
+IR --> Inline : 函数内联
+Inline --> Escape : 逃逸分析
+Escape --> SSAGen : 生成SSA
+SSAGen --> SSAOpt : 优化
+SSAOpt --> CodeGen : 生成代码
+CodeGen --> MachineCodeGen : 平台相关代码
+MachineCodeGen --> ObjGen : 生成对象文件
+
+' 辅助关系
+TypeChecker --> SymTab : 使用
+IR --> ConstFold : 使用
+MachineCodeGen --> Dwarf : 生成
+CompilerMain --> Flags : 解析
+
+note right of CompilerMain
+  编译器入口:
+  1. 解析命令行参数
+  2. 设置编译目标
+  3. 启动编译流程
+end note
+
+note right of TypeChecker
+  类型检查器:
+  - 类型推断
+  - 类型兼容性检查
+  - 方法集计算
+  - 接口实现验证
+end note
+
+note right of SSAOpt
+  SSA优化包括:
+  - 死代码消除
+  - 常量传播
+  - 强度降低
+  - 循环优化
+  - 内存分配优化
+end note
+
+note right of MachineCodeGen
+  平台相关代码生成:
+  - AMD64: src/cmd/compile/internal/amd64/
+  - ARM64: src/cmd/compile/internal/arm64/
+  - x86: src/cmd/compile/internal/x86/
+  - 其他架构...
+end note
+
+@enduml

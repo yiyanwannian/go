@@ -1,0 +1,124 @@
+@startuml Go运行时实现架构
+
+package "Go运行时 (src/runtime/)" {
+  [运行时入口 (src/runtime/rt0_*.s, src/runtime/asm_*.s)] as RuntimeEntry
+  
+  package "内存管理 (src/runtime/)" {
+    [内存分配器 (src/runtime/malloc.go)] as Malloc
+    [垃圾回收器 (src/runtime/mgc.go)] as GC
+    [写屏障 (src/runtime/mbarrier.go)] as WriteBarrier
+    [标记清除 (src/runtime/mgcsweep.go)] as Sweep
+    [内存回收 (src/runtime/mgcscavenge.go)] as Scavenge
+    [堆管理 (src/runtime/mheap.go)] as Heap
+    [对象分配 (src/runtime/malloc.go)] as ObjAlloc
+    [大对象分配 (src/runtime/mheap.go)] as LargeAlloc
+  }
+  
+  package "调度器 (src/runtime/)" {
+    [调度器实现 (src/runtime/proc.go)] as Scheduler
+    [Goroutine (src/runtime/proc.go)] as Goroutine
+    [处理器P (src/runtime/proc.go)] as Processor
+    [线程M (src/runtime/proc.go)] as Thread
+    [工作窃取 (src/runtime/proc.go)] as WorkStealing
+    [系统调用 (src/runtime/proc.go)] as Syscall
+    [抢占式调度 (src/runtime/preempt.go)] as Preemption
+    [调度器锁 (src/runtime/lock_*.go)] as SchedLock
+  }
+  
+  package "数据结构 (src/runtime/)" {
+    [Channel (src/runtime/chan.go)] as Channel
+    [Map (src/runtime/map.go)] as Map
+    [Slice (src/runtime/slice.go)] as Slice
+    [String (src/runtime/string.go)] as String
+    [接口 (src/runtime/iface.go)] as Interface
+    [反射 (src/runtime/reflect.go)] as Reflect
+  }
+  
+  package "栈管理 (src/runtime/)" {
+    [栈实现 (src/runtime/stack.go)] as Stack
+    [栈增长 (src/runtime/stack.go)] as StackGrowth
+    [栈分裂 (src/runtime/stack.go)] as StackSplit
+    [栈收缩 (src/runtime/stack.go)] as StackShrink
+  }
+  
+  package "系统交互 (src/runtime/)" {
+    [系统调用 (src/runtime/sys_*.go)] as SysCall
+    [信号处理 (src/runtime/signal_*.go)] as Signal
+    [网络轮询器 (src/runtime/netpoll.go)] as NetPoll
+    [定时器 (src/runtime/time.go)] as Timer
+    [OS线程 (src/runtime/os_*.go)] as OSThread
+  }
+}
+
+' 运行时关系
+RuntimeEntry --> Malloc : 初始化
+RuntimeEntry --> Scheduler : 启动
+
+' 内存管理关系
+Malloc --> Heap : 使用
+Malloc --> ObjAlloc : 小对象
+Malloc --> LargeAlloc : 大对象
+GC --> WriteBarrier : 使用
+GC --> Sweep : 清除阶段
+GC --> Scavenge : 内存回收
+
+' 调度器关系
+Scheduler --> Goroutine : 管理
+Scheduler --> Processor : 管理
+Scheduler --> Thread : 管理
+Scheduler --> WorkStealing : 使用
+Scheduler --> Syscall : 处理
+Scheduler --> Preemption : 实现
+Scheduler --> SchedLock : 使用
+
+' 栈管理关系
+Stack --> StackGrowth : 包含
+Stack --> StackSplit : 包含
+Stack --> StackShrink : 包含
+Goroutine --> Stack : 使用
+
+' 系统交互关系
+Scheduler --> NetPoll : 使用
+Scheduler --> Timer : 使用
+Scheduler --> OSThread : 使用
+Scheduler --> Signal : 处理
+
+' 数据结构关系
+Interface --> Reflect : 支持
+
+note right of GC
+  垃圾回收器实现:
+  - 三色标记法
+  - 并发标记
+  - 并发清除
+  - 写屏障保护
+  - 辅助GC
+end note
+
+note right of Scheduler
+  调度器实现:
+  - G: goroutine
+  - P: 处理器
+  - M: OS线程
+  - 全局运行队列
+  - 本地运行队列
+  - 工作窃取算法
+end note
+
+note right of Channel
+  Channel实现:
+  - 缓冲/非缓冲通道
+  - 发送/接收队列
+  - 阻塞/非阻塞操作
+  - select支持
+end note
+
+note right of Stack
+  栈管理:
+  - 连续栈
+  - 栈增长检测
+  - 栈复制
+  - 栈帧布局
+end note
+
+@enduml

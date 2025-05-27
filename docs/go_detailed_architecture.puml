@@ -1,0 +1,160 @@
+@startuml Go语言详细架构图
+
+' 主要组件
+package "Go语言项目" {
+  ' 命令行工具
+  package "命令行工具 (src/cmd/)" {
+    [go命令 (src/cmd/go/)] as GoCmd
+    [编译器 (src/cmd/compile/)] as Compiler
+    [链接器 (src/cmd/link/)] as Linker
+    [格式化工具 (src/cmd/gofmt/)] as Fmt
+    [静态分析 (src/cmd/vet/)] as Vet
+    [文档工具 (src/cmd/doc/)] as DocTool
+  }
+  
+  ' 运行时
+  package "运行时 (src/runtime/)" {
+    [内存分配器 (src/runtime/malloc.go)] as Malloc
+    [垃圾回收器 (src/runtime/mgc.go)] as GC
+    [调度器 (src/runtime/proc.go)] as Scheduler
+    [栈管理 (src/runtime/stack.go)] as Stack
+    [goroutine (src/runtime/goroutine.go)] as Goroutine
+    [channel (src/runtime/chan.go)] as Channel
+    [map实现 (src/runtime/map.go)] as Map
+    [slice实现 (src/runtime/slice.go)] as Slice
+  }
+  
+  ' 标准库核心包
+  package "标准库核心包 (src/)" {
+    [io (src/io/)] as IO
+    [os (src/os/)] as OS
+    [sync (src/sync/)] as Sync
+    [reflect (src/reflect/)] as Reflect
+    [context (src/context/)] as Context
+    [time (src/time/)] as Time
+    [errors (src/errors/)] as Errors
+  }
+  
+  ' 网络相关
+  package "网络相关 (src/net/)" {
+    [net (src/net/)] as Net
+    [http (src/net/http/)] as HTTP
+    [rpc (src/net/rpc/)] as RPC
+    [url (src/net/url/)] as URL
+  }
+  
+  ' 数据处理
+  package "数据处理 (src/)" {
+    [encoding (src/encoding/)] as Encoding
+    [json (src/encoding/json/)] as JSON
+    [xml (src/encoding/xml/)] as XML
+    [database/sql (src/database/sql/)] as SQL
+  }
+  
+  ' 安全相关
+  package "安全相关 (src/)" {
+    [crypto (src/crypto/)] as Crypto
+    [tls (src/crypto/tls/)] as TLS
+    [hash (src/hash/)] as Hash
+  }
+  
+  ' 语言工具
+  package "语言工具 (src/go/)" {
+    [ast (src/go/ast/)] as AST
+    [parser (src/go/parser/)] as Parser
+    [token (src/go/token/)] as Token
+    [types (src/go/types/)] as Types
+    [doc (src/go/doc/)] as Doc
+    [comment (src/go/doc/comment/)] as Comment
+    [build (src/go/build/)] as Build
+  }
+  
+  ' 测试框架
+  package "测试框架 (src/)" {
+    [testing (src/testing/)] as Testing
+    [testify (src/testing/quick/)] as TestQuick
+    [benchmark (src/testing/benchmark.go)] as Benchmark
+  }
+  
+  ' 内部包
+  package "内部包 (src/internal/)" {
+    [内部工具 (src/internal/)] as Internal
+    [编译器后端 (src/cmd/compile/internal/)] as CompilerInternal
+    [链接器内部 (src/cmd/link/internal/)] as LinkerInternal
+  }
+}
+
+' 关系图
+' 命令行工具关系
+GoCmd --> Compiler : 调用
+GoCmd --> Linker : 调用
+GoCmd --> Fmt : 调用
+GoCmd --> Vet : 调用
+GoCmd --> Build : 使用
+
+' 编译器关系
+Compiler --> AST : 使用
+Compiler --> Parser : 使用
+Compiler --> Token : 使用
+Compiler --> Types : 使用
+Compiler --> CompilerInternal : 包含
+
+' 运行时关系
+Goroutine --> Scheduler : 由其调度
+Channel --> Scheduler : 使用
+Malloc --> GC : 协作
+Stack --> Goroutine : 支持
+
+' 标准库关系
+HTTP --> Net : 基于
+JSON --> Encoding : 实现
+XML --> Encoding : 实现
+SQL --> Context : 使用
+Sync --> Scheduler : 基于
+Reflect --> Types : 使用
+
+' 文档系统关系
+Doc --> Comment : 使用
+Doc --> AST : 解析
+DocTool --> Doc : 使用
+
+' 测试关系
+Testing --> Benchmark : 包含
+Testing --> Context : 使用
+
+' 注释说明
+note right of Compiler
+  编译器流程:
+  1. 词法分析 (src/cmd/compile/internal/syntax/)
+  2. 语法分析 (src/cmd/compile/internal/syntax/)
+  3. 类型检查 (src/cmd/compile/internal/types2/)
+  4. 中间代码生成 (src/cmd/compile/internal/ir/)
+  5. SSA优化 (src/cmd/compile/internal/ssa/)
+  6. 机器码生成 (src/cmd/compile/internal/*/ssa.go)
+end note
+
+note right of GC
+  垃圾回收器:
+  - 三色标记法 (src/runtime/mgc.go)
+  - 写屏障 (src/runtime/mbarrier.go)
+  - 并发清除 (src/runtime/mgcsweep.go)
+  - 内存回收 (src/runtime/mgcscavenge.go)
+end note
+
+note right of Scheduler
+  调度器实现:
+  - G-P-M模型 (src/runtime/proc.go)
+  - 工作窃取 (src/runtime/proc.go)
+  - 系统调用处理 (src/runtime/proc.go)
+  - 抢占式调度 (src/runtime/preempt.go)
+end note
+
+note right of HTTP
+  HTTP服务器:
+  - 多路复用器 (src/net/http/server.go)
+  - 处理器接口 (src/net/http/server.go)
+  - 中间件支持 (src/net/http/server.go)
+  - HTTP/2支持 (src/net/http/h2_bundle.go)
+end note
+
+@enduml

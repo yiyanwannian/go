@@ -1,0 +1,164 @@
+@startuml Go运行时实现架构
+
+package "Go运行时 (src/runtime/)" {
+  [运行时入口 (src/runtime/asm_amd64.s)] as RTEntry
+  
+  package "调度器 (src/runtime/)" {
+    [调度器核心 (src/runtime/proc.go)] as Scheduler
+    [G-P-M模型 (src/runtime/proc.go)] as GPM
+    [goroutine (src/runtime/proc.go)] as Goroutine
+    [处理器P (src/runtime/proc.go)] as Processor
+    [线程M (src/runtime/proc.go)] as Thread
+    [运行队列 (src/runtime/proc.go)] as RunQueue
+    [系统调用 (src/runtime/proc.go)] as Syscall
+    [系统监控 (src/runtime/proc.go)] as SysMon
+    [抢占式调度 (src/runtime/preempt.go)] as Preempt
+  }
+  
+  package "内存管理 (src/runtime/)" {
+    [内存分配器 (src/runtime/malloc.go)] as Malloc
+    [mcache (src/runtime/mcache.go)] as MCache
+    [mcentral (src/runtime/mcentral.go)] as MCentral
+    [mheap (src/runtime/mheap.go)] as MHeap
+    [mspan (src/runtime/mspan.go)] as MSpan
+    [对象分配 (src/runtime/malloc.go)] as ObjAlloc
+    [栈管理 (src/runtime/stack.go)] as Stack
+  }
+  
+  package "垃圾回收 (src/runtime/)" {
+    [GC入口 (src/runtime/mgc.go)] as GC
+    [标记 (src/runtime/mgcmark.go)] as Mark
+    [清扫 (src/runtime/mgcsweep.go)] as Sweep
+    [内存回收 (src/runtime/mgcscavenge.go)] as Scavenge
+    [写屏障 (src/runtime/mbarrier.go)] as Barrier
+    [GC控制器 (src/runtime/mgc.go)] as GCController
+    [辅助GC (src/runtime/mgc.go)] as AssistGC
+  }
+  
+  package "并发原语 (src/runtime/)" {
+    [channel (src/runtime/chan.go)] as Channel
+    [select (src/runtime/select.go)] as Select
+    [锁 (src/runtime/lock_futex.go)] as Lock
+    [信号量 (src/runtime/sema.go)] as Sema
+    [通知 (src/runtime/note.go)] as Note
+    [等待组 (src/runtime/rwmutex.go)] as WaitGroup
+  }
+  
+  package "系统交互 (src/runtime/)" {
+    [系统调用 (src/runtime/sys_linux_amd64.s)] as SysCall
+    [信号处理 (src/runtime/signal_unix.go)] as Signal
+    [网络轮询 (src/runtime/netpoll.go)] as NetPoll
+    [定时器 (src/runtime/time.go)] as Timer
+    [OS线程 (src/runtime/os_linux.go)] as OSThread
+    [内存映射 (src/runtime/mem_linux.go)] as MemMap
+  }
+  
+  package "运行时支持 (src/runtime/)" {
+    [类型系统 (src/runtime/type.go)] as Type
+    [反射支持 (src/runtime/reflect.go)] as Reflect
+    [哈希表 (src/runtime/map.go)] as Map
+    [切片 (src/runtime/slice.go)] as Slice
+    [字符串 (src/runtime/string.go)] as String
+    [接口 (src/runtime/iface.go)] as Interface
+    [延迟调用 (src/runtime/panic.go)] as Defer
+    [恐慌恢复 (src/runtime/panic.go)] as Panic
+  }
+}
+
+' 运行时入口关系
+RTEntry --> Scheduler : 初始化
+RTEntry --> Malloc : 初始化
+RTEntry --> GC : 初始化
+
+' 调度器关系
+Scheduler --> GPM : 使用
+GPM --> Goroutine : 管理
+GPM --> Processor : 管理
+GPM --> Thread : 管理
+Scheduler --> RunQueue : 使用
+Scheduler --> Syscall : 处理
+Scheduler --> SysMon : 启动
+Scheduler --> Preempt : 使用
+
+' 内存管理关系
+Malloc --> MCache : 使用
+Malloc --> MCentral : 使用
+Malloc --> MHeap : 使用
+MCache --> MSpan : 使用
+MCentral --> MSpan : 管理
+MHeap --> MSpan : 管理
+Malloc --> ObjAlloc : 实现
+Malloc --> Stack : 管理
+
+' 垃圾回收关系
+GC --> Mark : 使用
+GC --> Sweep : 使用
+GC --> Scavenge : 使用
+GC --> Barrier : 使用
+GC --> GCController : 使用
+GC --> AssistGC : 使用
+Malloc --> GC : 触发
+
+' 并发原语关系
+Channel --> Sema : 使用
+Select --> Channel : 使用
+Lock --> Sema : 使用
+WaitGroup --> Sema : 使用
+Note --> OSThread : 使用
+
+' 系统交互关系
+SysCall --> OSThread : 使用
+Signal --> OSThread : 使用
+NetPoll --> OSThread : 使用
+Timer --> NetPoll : 使用
+MemMap --> MHeap : 支持
+
+' 运行时支持关系
+Type --> Reflect : 支持
+Map --> Type : 使用
+Slice --> Type : 使用
+String --> Type : 使用
+Interface --> Type : 使用
+Defer --> Panic : 集成
+
+note right of RTEntry
+  运行时入口:
+  - 初始化运行时
+  - 启动调度器
+  - 创建主goroutine
+  - 调用main函数
+end note
+
+note right of Scheduler
+  调度器实现:
+  - G-P-M模型
+  - 工作窃取
+  - 系统调用处理
+  - 抢占式调度
+end note
+
+note right of Malloc
+  内存分配器:
+  - 分配器层次结构
+  - 大小类管理
+  - 内存复用
+  - 按需分配
+end note
+
+note right of GC
+  垃圾回收器:
+  - 三色标记法
+  - 并发标记清除
+  - 写屏障
+  - 辅助GC
+end note
+
+note right of Channel
+  channel实现:
+  - 缓冲/非缓冲通道
+  - 发送/接收队列
+  - 阻塞/非阻塞操作
+  - select支持
+end note
+
+@enduml

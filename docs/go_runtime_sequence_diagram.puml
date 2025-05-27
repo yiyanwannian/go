@@ -1,0 +1,127 @@
+@startuml Go运行时执行时序图
+
+autonumber
+
+' 参与者定义
+participant "操作系统" as OS
+participant "运行时入口\n(src/runtime/rt0_*.s)" as RT0
+participant "运行时初始化\n(src/runtime/proc.go)" as RTInit
+participant "调度器\n(src/runtime/proc.go)" as Scheduler
+participant "内存分配器\n(src/runtime/malloc.go)" as Malloc
+participant "垃圾回收器\n(src/runtime/mgc.go)" as GC
+participant "主goroutine\n(src/runtime/proc.go)" as MainG
+participant "用户main函数\n(用户代码)" as UserMain
+participant "系统监控\n(src/runtime/proc.go:sysmon)" as SysMon
+participant "网络轮询器\n(src/runtime/netpoll.go)" as NetPoll
+
+' 启动序列
+OS -> RT0: 程序入口点调用\n(src/runtime/rt0_*.s)
+activate RT0
+
+RT0 -> RTInit: runtime·rt0_go\n(src/runtime/asm_amd64.s)
+activate RTInit
+
+RTInit -> RTInit: 检查CPU特性\n(src/runtime/asm_amd64.s)
+RTInit -> RTInit: 设置g0栈\n(src/runtime/proc.go:schedinit)
+RTInit -> RTInit: 初始化m0\n(src/runtime/proc.go:schedinit)
+
+RTInit -> Malloc: mallocinit()\n(src/runtime/malloc.go)
+activate Malloc
+Malloc --> RTInit: 内存分配器初始化完成
+deactivate Malloc
+
+RTInit -> GC: gcinit()\n(src/runtime/mgc.go)
+activate GC
+GC --> RTInit: 垃圾回收器初始化完成
+deactivate GC
+
+RTInit -> NetPoll: netpollinit()\n(src/runtime/netpoll.go)
+activate NetPoll
+NetPoll --> RTInit: 网络轮询器初始化完成
+deactivate NetPoll
+
+RTInit -> SysMon: 启动系统监控\n(src/runtime/proc.go:newm(sysmon, nil))
+activate SysMon
+SysMon --> RTInit: 系统监控启动完成
+
+RTInit -> MainG: 创建主goroutine\n(src/runtime/proc.go:newproc)
+activate MainG
+RTInit --> RT0: 初始化完成
+deactivate RTInit
+
+RT0 -> Scheduler: schedule()\n(src/runtime/proc.go)
+activate Scheduler
+deactivate RT0
+
+Scheduler -> MainG: 执行主goroutine\n(src/runtime/proc.go:execute)
+deactivate Scheduler
+
+MainG -> UserMain: 调用main.main()\n(src/runtime/proc.go:main)
+activate UserMain
+
+' 运行时循环
+loop 程序执行期间
+  SysMon -> SysMon: 检查死锁\n(src/runtime/proc.go:sysmon)
+  SysMon -> SysMon: 强制抢占\n(src/runtime/proc.go:preemptone)
+  SysMon -> SysMon: 触发垃圾回收\n(src/runtime/proc.go:forcegchelper)
+  SysMon -> SysMon: 归还内存\n(src/runtime/proc.go:scavenge)
+  SysMon -> NetPoll: 检查网络事件\n(src/runtime/proc.go:netpoll)
+end
+
+' 垃圾回收触发
+UserMain -> Malloc: 内存分配\n(src/runtime/malloc.go:mallocgc)
+activate Malloc
+
+Malloc -> GC: 检查是否需要GC\n(src/runtime/malloc.go:mallocgc)
+activate GC
+
+GC -> GC: 启动标记阶段\n(src/runtime/mgc.go:gcStart)
+note right: 并发标记开始
+
+GC -> GC: 写屏障启用\n(src/runtime/mbarrier.go)
+GC -> GC: 标记阶段\n(src/runtime/mgc.go:gcMarkWorker)
+GC -> GC: 标记终止\n(src/runtime/mgc.go:gcMarkTermination)
+GC -> GC: 清除阶段\n(src/runtime/mgcsweep.go:gcSweep)
+
+GC --> Malloc: GC完成
+deactivate GC
+
+Malloc --> UserMain: 返回分配的内存
+deactivate Malloc
+
+' 创建goroutine
+UserMain -> Scheduler: 创建goroutine\n(src/runtime/proc.go:newproc)
+activate Scheduler
+
+Scheduler -> Scheduler: 将goroutine放入运行队列\n(src/runtime/proc.go:runqput)
+Scheduler --> UserMain: goroutine创建完成
+deactivate Scheduler
+
+' channel操作
+UserMain -> Channel: 发送数据到channel\n(src/runtime/chan.go:chansend)
+activate Channel
+
+alt channel已满或无缓冲
+  Channel -> Scheduler: 挂起当前goroutine\n(src/runtime/proc.go:gopark)
+  activate Scheduler
+  Scheduler -> Scheduler: 切换到其他goroutine\n(src/runtime/proc.go:schedule)
+  Scheduler --> Channel: 当channel可发送时恢复
+  deactivate Scheduler
+end
+
+Channel --> UserMain: 发送完成
+deactivate Channel
+
+' 程序结束
+UserMain --> MainG: main函数返回
+deactivate UserMain
+
+MainG -> Scheduler: exit()\n(src/runtime/proc.go)
+activate Scheduler
+deactivate MainG
+
+Scheduler -> OS: 程序退出\n(src/runtime/proc.go:exit)
+deactivate Scheduler
+deactivate SysMon
+
+@enduml

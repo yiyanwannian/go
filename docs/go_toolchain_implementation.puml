@@ -1,0 +1,195 @@
+@startuml Go工具链实现架构
+
+package "Go工具链 (src/cmd/)" {
+  [go命令 (src/cmd/go/main.go)] as GoCmd
+  
+  package "go命令子命令 (src/cmd/go/internal/)" {
+    [build (src/cmd/go/internal/work/build.go)] as Build
+    [run (src/cmd/go/internal/run/run.go)] as Run
+    [test (src/cmd/go/internal/test/test.go)] as Test
+    [get (src/cmd/go/internal/get/get.go)] as Get
+    [mod (src/cmd/go/internal/modcmd/)] as Mod
+    [list (src/cmd/go/internal/list/list.go)] as List
+    [clean (src/cmd/go/internal/clean/clean.go)] as Clean
+    [doc (src/cmd/go/internal/doc/doc.go)] as GoDoc
+    [vet (src/cmd/go/internal/vet/vet.go)] as GoVet
+    [fmt (src/cmd/go/internal/fmt/fmt.go)] as GoFmt
+  }
+  
+  package "编译工具 (src/cmd/)" {
+    [编译器 (src/cmd/compile/main.go)] as Compile
+    [链接器 (src/cmd/link/main.go)] as Link
+    [汇编器 (src/cmd/asm/main.go)] as Asm
+    [打包工具 (src/cmd/pack/main.go)] as Pack
+  }
+  
+  package "代码工具 (src/cmd/)" {
+    [gofmt (src/cmd/gofmt/main.go)] as Gofmt
+    [vet (src/cmd/vet/main.go)] as Vet
+    [doc (src/cmd/doc/main.go)] as Doc
+    [trace (src/cmd/trace/main.go)] as Trace
+    [pprof (src/cmd/pprof/main.go)] as Pprof
+    [cover (src/cmd/cover/cover.go)] as Cover
+  }
+  
+  package "模块系统 (src/cmd/go/internal/)" {
+    [模块加载 (src/cmd/go/internal/modload/)] as ModLoad
+    [模块下载 (src/cmd/go/internal/modfetch/)] as ModFetch
+    [模块缓存 (src/cmd/go/internal/modcache/)] as ModCache
+    [go.mod解析 (src/cmd/go/internal/modfile/)] as ModFile
+    [版本选择 (src/cmd/go/internal/modconv/)] as ModVersion
+  }
+  
+  package "构建系统 (src/cmd/go/internal/)" {
+    [包加载 (src/cmd/go/internal/load/)] as Load
+    [构建缓存 (src/cmd/go/internal/cache/)] as Cache
+    [工作区 (src/cmd/go/internal/work/)] as Work
+    [编译标志 (src/cmd/go/internal/base/)] as Flags
+    [环境变量 (src/cmd/go/internal/cfg/)] as Cfg
+    [文件系统 (src/cmd/go/internal/fsys/)] as Fsys
+  }
+  
+  package "编译器内部 (src/cmd/compile/internal/)" {
+    [词法分析 (src/cmd/compile/internal/syntax/)] as Lexer
+    [语法分析 (src/cmd/compile/internal/syntax/)] as Parser
+    [类型检查 (src/cmd/compile/internal/types2/)] as TypeCheck
+    [中间表示 (src/cmd/compile/internal/ir/)] as IR
+    [SSA生成 (src/cmd/compile/internal/ssa/)] as SSA
+    [代码生成 (src/cmd/compile/internal/gen/)] as CodeGen
+    [内联 (src/cmd/compile/internal/inline/)] as Inline
+    [逃逸分析 (src/cmd/compile/internal/escape/)] as Escape
+    [优化 (src/cmd/compile/internal/opt/)] as Opt
+  }
+  
+  package "链接器内部 (src/cmd/link/internal/)" {
+    [符号处理 (src/cmd/link/internal/sym/)] as SymProc
+    [目标文件加载 (src/cmd/link/internal/loader/)] as ObjLoader
+    [重定位 (src/cmd/link/internal/ld/reloc.go)] as Reloc
+    [可执行文件生成 (src/cmd/link/internal/ld/outbuf.go)] as ExeGen
+  }
+}
+
+' 命令关系
+GoCmd --> Build : 包含
+GoCmd --> Run : 包含
+GoCmd --> Test : 包含
+GoCmd --> Get : 包含
+GoCmd --> Mod : 包含
+GoCmd --> List : 包含
+GoCmd --> Clean : 包含
+GoCmd --> GoDoc : 包含
+GoCmd --> GoVet : 包含
+GoCmd --> GoFmt : 包含
+
+' 工具调用关系
+Build --> Compile : 调用
+Build --> Link : 调用
+Build --> Asm : 调用
+Build --> Pack : 调用
+GoFmt --> Gofmt : 调用
+GoVet --> Vet : 调用
+GoDoc --> Doc : 调用
+
+' 模块系统关系
+Get --> ModLoad : 使用
+Mod --> ModLoad : 使用
+Mod --> ModFetch : 使用
+Mod --> ModCache : 使用
+Mod --> ModFile : 使用
+Mod --> ModVersion : 使用
+ModLoad --> ModFetch : 使用
+ModLoad --> ModCache : 使用
+ModLoad --> ModFile : 使用
+
+' 构建系统关系
+Build --> Load : 使用
+Build --> Cache : 使用
+Build --> Work : 使用
+Build --> Flags : 使用
+Build --> Cfg : 使用
+Build --> Fsys : 使用
+Test --> Load : 使用
+Test --> Work : 使用
+Run --> Load : 使用
+List --> Load : 使用
+
+' 编译器内部关系
+Compile --> Lexer : 使用
+Compile --> Parser : 使用
+Compile --> TypeCheck : 使用
+Compile --> IR : 使用
+Compile --> SSA : 使用
+Compile --> CodeGen : 使用
+Compile --> Inline : 使用
+Compile --> Escape : 使用
+Compile --> Opt : 使用
+Parser --> Lexer : 使用
+TypeCheck --> IR : 使用
+IR --> SSA : 转换
+SSA --> Opt : 应用
+SSA --> CodeGen : 生成
+Inline --> IR : 修改
+Escape --> IR : 分析
+
+' 链接器内部关系
+Link --> SymProc : 使用
+Link --> ObjLoader : 使用
+Link --> Reloc : 使用
+Link --> ExeGen : 使用
+
+note right of GoCmd
+  go命令入口:
+  1. 解析命令行参数
+  2. 确定子命令
+  3. 执行对应子命令
+end note
+
+note right of Build
+  build命令实现:
+  - 包依赖分析
+  - 增量构建
+  - 并行编译
+  - 缓存管理
+end note
+
+note right of ModLoad
+  模块加载:
+  - 解析go.mod
+  - 版本选择
+  - 依赖图构建
+  - 模块下载
+end note
+
+note right of Cache
+  构建缓存:
+  - 基于内容的缓存
+  - 缓存失效检测
+  - 缓存共享
+end note
+
+note right of Compile
+  编译器实现:
+  - 源代码解析
+  - 类型检查
+  - 中间代码生成
+  - 优化
+  - 机器码生成
+end note
+
+note right of SSA
+  SSA中间表示:
+  - 静态单赋值形式
+  - 控制流图
+  - 数据流分析
+  - 代码优化
+end note
+
+note right of Link
+  链接器实现:
+  - 目标文件合并
+  - 符号解析
+  - 重定位
+  - 可执行文件生成
+end note
+
+@enduml

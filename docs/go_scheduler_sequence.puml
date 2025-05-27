@@ -1,0 +1,177 @@
+@startuml Go调度器时序图
+
+' 参与者定义
+participant "操作系统" as OS
+participant "运行时入口\n(src/runtime/proc.go)" as RTInit
+participant "调度器\n(src/runtime/proc.go)" as Scheduler
+participant "M(线程)\n(src/runtime/proc.go)" as M
+participant "P(处理器)\n(src/runtime/proc.go)" as P
+participant "G(goroutine)\n(src/runtime/proc.go)" as G
+participant "本地运行队列\n(src/runtime/proc.go)" as LocalQ
+participant "全局运行队列\n(src/runtime/proc.go)" as GlobalQ
+participant "系统监控\n(src/runtime/proc.go)" as SysMon
+participant "网络轮询器\n(src/runtime/netpoll.go)" as NetPoll
+
+' 调度器初始化
+OS -> RTInit: 程序启动
+activate RTInit
+
+RTInit -> Scheduler: schedinit()\n(src/runtime/proc.go)
+activate Scheduler
+
+Scheduler -> Scheduler: 初始化全局运行队列\n(src/runtime/proc.go:schedinit)
+Scheduler -> P: 创建GOMAXPROCS个P\n(src/runtime/proc.go:procresize)
+activate P
+
+Scheduler -> M: 初始化M0\n(src/runtime/proc.go:schedinit)
+activate M
+
+Scheduler -> G: 创建主goroutine\n(src/runtime/proc.go:newproc)
+activate G
+
+Scheduler -> SysMon: 启动系统监控\n(src/runtime/proc.go:newm)
+activate SysMon
+
+Scheduler --> RTInit: 初始化完成
+deactivate Scheduler
+
+RTInit -> Scheduler: schedule()\n(src/runtime/proc.go)
+activate Scheduler
+deactivate RTInit
+
+' 调度循环
+Scheduler -> LocalQ: 查找本地运行队列\n(src/runtime/proc.go:runqget)
+activate LocalQ
+
+alt 本地队列有G
+  LocalQ --> Scheduler: 返回G
+  deactivate LocalQ
+  
+else 本地队列为空
+  LocalQ --> Scheduler: 返回nil
+  deactivate LocalQ
+  
+  Scheduler -> GlobalQ: 查找全局运行队列\n(src/runtime/proc.go:globrunqget)
+  activate GlobalQ
+  
+  alt 全局队列有G
+    GlobalQ --> Scheduler: 返回G
+    deactivate GlobalQ
+    
+  else 全局队列为空
+    GlobalQ --> Scheduler: 返回nil
+    deactivate GlobalQ
+    
+    Scheduler -> NetPoll: 查找网络就绪的G\n(src/runtime/proc.go:findrunnable)
+    activate NetPoll
+    
+    alt 有网络就绪的G
+      NetPoll --> Scheduler: 返回G
+      deactivate NetPoll
+      
+    else 无网络就绪的G
+      NetPoll --> Scheduler: 返回nil
+      deactivate NetPoll
+      
+      Scheduler -> Scheduler: 尝试窃取其他P的G\n(src/runtime/proc.go:stealWork)
+      
+      alt 窃取成功
+        Scheduler --> Scheduler: 返回窃取的G
+        
+      else 窃取失败
+        Scheduler -> M: 休眠M\n(src/runtime/proc.go:stopm)
+        M --> Scheduler: M被唤醒
+      end
+    end
+  end
+end
+
+' 执行goroutine
+Scheduler -> G: 执行G\n(src/runtime/proc.go:execute)
+deactivate Scheduler
+
+G -> G: 执行用户代码
+
+' goroutine让出CPU的情况
+alt G完成执行
+  G -> Scheduler: goexit()\n(src/runtime/proc.go)
+  activate Scheduler
+  
+else G调用了阻塞操作
+  G -> Scheduler: gopark()\n(src/runtime/proc.go)
+  activate Scheduler
+  
+  Scheduler -> G: 保存G状态\n(src/runtime/proc.go:gopark)
+  Scheduler -> Scheduler: 将G标记为等待状态
+  
+else G进行系统调用
+  G -> Scheduler: reentersyscall()\n(src/runtime/proc.go)
+  activate Scheduler
+  
+  Scheduler -> P: 解绑P\n(src/runtime/proc.go:handoffp)
+  P -> M: 解绑M
+  
+  G -> OS: 执行系统调用
+  
+  G -> Scheduler: exitsyscall()\n(src/runtime/proc.go)
+  
+  Scheduler -> P: 尝试重新获取P\n(src/runtime/proc.go:exitsyscall)
+  
+  alt 获取到P
+    P -> M: 绑定M
+    Scheduler -> G: 继续执行G
+    deactivate Scheduler
+    
+  else 无可用P
+    Scheduler -> GlobalQ: 将G放入全局队列\n(src/runtime/proc.go:globrunqput)
+    activate GlobalQ
+    GlobalQ --> Scheduler: 放入完成
+    deactivate GlobalQ
+    
+    Scheduler -> M: 休眠M\n(src/runtime/proc.go:stopm)
+    deactivate Scheduler
+  end
+end
+
+' 系统监控
+loop 每10ms
+  SysMon -> SysMon: 检查长时间运行的G\n(src/runtime/proc.go:retake)
+  
+  alt 发现长时间运行的G
+    SysMon -> G: 抢占G\n(src/runtime/proc.go:preemptone)
+  end
+  
+  SysMon -> SysMon: 检查网络轮询器\n(src/runtime/proc.go:sysmon)
+  SysMon -> SysMon: 检查是否需要强制GC\n(src/runtime/proc.go:sysmon)
+  SysMon -> SysMon: 归还内存给操作系统\n(src/runtime/proc.go:sysmon)
+end
+
+' 创建新的goroutine
+G -> Scheduler: newproc()\n(src/runtime/proc.go)
+activate Scheduler
+
+Scheduler -> G: 创建新的G\n(src/runtime/proc.go:newproc1)
+activate G #DarkGreen
+
+Scheduler -> LocalQ: 将G放入本地队列\n(src/runtime/proc.go:runqput)
+activate LocalQ
+
+alt 本地队列未满
+  LocalQ --> Scheduler: 放入成功
+  deactivate LocalQ
+  
+else 本地队列已满
+  LocalQ -> GlobalQ: 将一半G移到全局队列\n(src/runtime/proc.go:runqputslow)
+  activate GlobalQ
+  GlobalQ --> LocalQ: 移动完成
+  deactivate GlobalQ
+  
+  LocalQ -> LocalQ: 将G放入本地队列
+  LocalQ --> Scheduler: 放入成功
+  deactivate LocalQ
+end
+
+Scheduler --> G: 返回
+deactivate Scheduler
+
+@enduml

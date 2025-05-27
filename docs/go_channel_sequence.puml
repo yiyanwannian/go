@@ -1,0 +1,61 @@
+@startuml Go通道操作时序图
+
+autonumber
+
+' 参与者定义
+participant "用户代码" as User
+participant "通道\n(src/runtime/chan.go)" as Channel
+participant "发送队列\n(src/runtime/chan.go)" as SendQ
+participant "接收队列\n(src/runtime/chan.go)" as RecvQ
+participant "缓冲区\n(src/runtime/chan.go)" as Buffer
+participant "调度器\n(src/runtime/proc.go)" as Scheduler
+participant "G(goroutine)\n(src/runtime/proc.go)" as G
+
+' 创建通道
+User -> Channel: make(chan T, size)\n(src/runtime/chan.go:makechan)
+activate Channel
+
+Channel -> Channel: 分配内存\n(src/runtime/chan.go:makechan)
+Channel -> Buffer: 初始化缓冲区\n(src/runtime/chan.go:makechan)
+activate Buffer
+Buffer --> Channel: 初始化完成
+deactivate Buffer
+
+Channel -> SendQ: 初始化发送队列\n(src/runtime/chan.go:makechan)
+activate SendQ
+SendQ --> Channel: 初始化完成
+deactivate SendQ
+
+Channel -> RecvQ: 初始化接收队列\n(src/runtime/chan.go:makechan)
+activate RecvQ
+RecvQ --> Channel: 初始化完成
+deactivate RecvQ
+
+Channel --> User: 返回通道
+deactivate Channel
+
+' 发送操作 - 无缓冲通道
+User -> Channel: ch <- v\n(src/runtime/chan.go:chansend)
+activate Channel
+
+Channel -> RecvQ: 检查接收队列\n(src/runtime/chan.go:chansend)
+activate RecvQ
+
+alt 接收队列不为空 (有G等待接收)
+  RecvQ -> G: 获取等待的G\n(src/runtime/chan.go:send)
+  activate G
+  RecvQ --> Channel: 返回等待的G
+  deactivate RecvQ
+  
+  Channel -> G: 直接将数据发送给G\n(src/runtime/chan.go:send)
+  Channel -> Scheduler: 将接收方G标记为可运行\n(src/runtime/chan.go:goready)
+  activate Scheduler
+  Scheduler --> Channel: 标记完成
+  deactivate Scheduler
+  
+  Channel --> User: 发送完成
+  deactivate Channel
+  
+else 接收队列为空 (无G等待接收)
+  RecvQ --> Channel: 返回nil
+  deactivate Recv

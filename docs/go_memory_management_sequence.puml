@@ -1,0 +1,120 @@
+@startuml Go内存管理时序图
+
+autonumber
+
+' 参与者定义
+participant "用户代码" as User
+participant "运行时API\n(src/runtime/)" as RuntimeAPI
+participant "内存分配器\n(src/runtime/malloc.go)" as Malloc
+participant "mcache\n(src/runtime/mcache.go)" as MCache
+participant "mcentral\n(src/runtime/mcentral.go)" as MCentral
+participant "mheap\n(src/runtime/mheap.go)" as MHeap
+participant "垃圾回收器\n(src/runtime/mgc.go)" as GC
+participant "操作系统" as OS
+
+' 小对象分配流程
+User -> RuntimeAPI: 创建对象
+activate RuntimeAPI
+
+RuntimeAPI -> Malloc: mallocgc(size)\n(src/runtime/malloc.go)
+activate Malloc
+
+alt 微小对象 (size < 16B)
+  Malloc -> MCache: 从tiny分配器分配\n(src/runtime/malloc.go:mallocgc)
+  activate MCache
+  MCache --> Malloc: 返回内存
+  deactivate MCache
+  
+else 小对象 (size <= 32KB)
+  Malloc -> MCache: 从对应大小类的span分配\n(src/runtime/malloc.go:mallocgc)
+  activate MCache
+  
+  alt mcache中有空闲对象
+    MCache --> Malloc: 返回内存
+  else mcache中无空闲对象
+    MCache -> MCentral: 获取新的span\n(src/runtime/mcache.go:refill)
+    activate MCentral
+    
+    alt mcentral有空闲span
+      MCentral --> MCache: 返回span
+    else mcentral无空闲span
+      MCentral -> MHeap: 获取新的span\n(src/runtime/mcentral.go:grow)
+      activate MHeap
+      
+      alt mheap有空闲span
+        MHeap --> MCentral: 返回span
+      else mheap无空闲span
+        MHeap -> OS: 向操作系统申请内存\n(src/runtime/mheap.go:grow)
+        activate OS
+        OS --> MHeap: 返回内存
+        deactivate OS
+        MHeap --> MCentral: 返回span
+      end
+      
+      deactivate MHeap
+    end
+    
+    MCentral --> MCache: 返回span
+    deactivate MCentral
+    MCache --> Malloc: 返回内存
+  end
+  
+  deactivate MCache
+  
+else 大对象 (size > 32KB)
+  Malloc -> MHeap: 直接从堆分配\n(src/runtime/malloc.go:largeAlloc)
+  activate MHeap
+  
+  alt mheap有足够大的span
+    MHeap --> Malloc: 返回内存
+  else mheap无足够大的span
+    MHeap -> OS: 向操作系统申请内存\n(src/runtime/mheap.go:grow)
+    activate OS
+    OS --> MHeap: 返回内存
+    deactivate OS
+    MHeap --> Malloc: 返回内存
+  end
+  
+  deactivate MHeap
+end
+
+Malloc -> Malloc: 检查是否需要触发GC\n(src/runtime/malloc.go:mallocgc)
+Malloc --> RuntimeAPI: 返回内存
+deactivate Malloc
+
+RuntimeAPI --> User: 返回对象
+deactivate RuntimeAPI
+
+' 垃圾回收流程
+GC -> GC: GC触发\n(src/runtime/mgc.go:gcStart)
+activate GC
+
+GC -> GC: 标记准备\n(src/runtime/mgc.go:gcBgMarkStartWorkers)
+GC -> GC: 写屏障启用\n(src/runtime/mbarrier.go)
+
+GC -> GC: 并发标记\n(src/runtime/mgc.go:gcMarkWorker)
+note right: 并发标记阶段，用户代码同时运行
+
+GC -> GC: 标记终止\n(src/runtime/mgc.go:gcMarkTermination)
+note right: 短暂STW，完成标记
+
+GC -> GC: 清除准备\n(src/runtime/mgc.go:gcSweep)
+GC -> GC: 并发清除\n(src/runtime/mgcsweep.go:bgsweep)
+note right: 并发清除阶段，按需清除
+
+GC --> GC: GC完成
+deactivate GC
+
+' 内存归还流程
+MHeap -> MHeap: 检测未使用内存\n(src/runtime/mheap.go:scavenge)
+activate MHeap
+
+MHeap -> OS: 归还内存\n(src/runtime/mheap.go:sysUnused)
+activate OS
+OS --> MHeap: 内存归还完成
+deactivate OS
+
+MHeap --> MHeap: 内存归还完成
+deactivate MHeap
+
+@enduml

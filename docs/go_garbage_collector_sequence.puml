@@ -1,0 +1,169 @@
+@startuml Go垃圾回收器时序图
+
+' 垃圾回收器时序图展示了完整的GC周期，包括：
+' 1. 触发机制（堆大小、周期性、显式调用）
+' 2. 标记准备阶段（STW、启用写屏障）
+' 3. 并发标记阶段（三色标记法、写屏障处理）
+' 4. 标记终止阶段（STW、完成剩余标记）
+' 5. 并发清扫阶段（后台清扫、按需清扫）
+' 6. 内存回收（将未使用内存归还给操作系统）
+
+autonumber
+
+' 参与者定义
+participant "用户代码" as User
+participant "运行时\n(src/runtime/)" as Runtime
+participant "GC入口\n(src/runtime/mgc.go)" as GCEntry
+participant "GC控制器\n(src/runtime/mgc.go)" as GCController
+participant "标记准备\n(src/runtime/mgc.go)" as MarkPrepare
+participant "并发标记\n(src/runtime/mgc.go)" as ConcurrentMark
+participant "标记终止\n(src/runtime/mgc.go)" as MarkTermination
+participant "清扫\n(src/runtime/mgcsweep.go)" as Sweep
+participant "写屏障\n(src/runtime/mbarrier.go)" as WriteBarrier
+participant "内存分配器\n(src/runtime/malloc.go)" as Malloc
+participant "调度器\n(src/runtime/proc.go)" as Scheduler
+
+' GC触发
+alt 堆大小触发
+  Malloc -> GCEntry: 检查是否需要GC\n(src/runtime/malloc.go:mallocgc)
+  activate GCEntry
+  
+else 周期性触发
+  Scheduler -> GCEntry: 后台触发GC\n(src/runtime/proc.go:forcegchelper)
+  activate GCEntry
+  
+else 显式触发
+  User -> Runtime: runtime.GC()\n(src/runtime/mgc.go:GC)
+  activate Runtime
+  Runtime -> GCEntry: 强制触发GC\n(src/runtime/mgc.go:gcStart)
+  activate GCEntry
+  deactivate Runtime
+end
+
+' GC控制器计算
+GCEntry -> GCController: 计算GC目标\n(src/runtime/mgc.go:gcSetTriggerRatio)
+activate GCController
+GCController -> GCController: 计算目标堆大小\n(src/runtime/mgc.go:gcControllerState.compute)
+GCController -> GCController: 使用GOGC环境变量\n(src/runtime/mgc.go:gcPercent)
+GCController --> GCEntry: 返回GC参数
+deactivate GCController
+
+' 标记准备阶段
+GCEntry -> MarkPrepare: 开始标记准备\n(src/runtime/mgc.go:gcStart)
+activate MarkPrepare
+
+MarkPrepare -> Scheduler: 请求STW\n(src/runtime/mgc.go:stopTheWorldWithSema)
+activate Scheduler
+Scheduler --> MarkPrepare: STW完成
+deactivate Scheduler
+
+MarkPrepare -> WriteBarrier: 启用写屏障\n(src/runtime/mgc.go:gcBgMarkStartWorkers)
+activate WriteBarrier
+WriteBarrier --> MarkPrepare: 写屏障启用完成
+deactivate WriteBarrier
+
+MarkPrepare -> Scheduler: 恢复世界\n(src/runtime/mgc.go:startTheWorldWithSema)
+activate Scheduler
+Scheduler --> MarkPrepare: 恢复完成
+deactivate Scheduler
+
+MarkPrepare -> ConcurrentMark: 启动标记工作线程\n(src/runtime/mgc.go:gcBgMarkStartWorkers)
+activate ConcurrentMark
+MarkPrepare --> GCEntry: 标记准备完成
+deactivate MarkPrepare
+
+' 并发标记阶段
+note right of ConcurrentMark: 并发标记阶段，用户代码同时运行
+
+ConcurrentMark -> ConcurrentMark: 启动标记工作线程\n(src/runtime/mgc.go:gcBgMarkWorker)
+ConcurrentMark -> ConcurrentMark: 扫描根对象\n(src/runtime/mgcmark.go:scanblock)
+ConcurrentMark -> ConcurrentMark: 三色标记法\n(src/runtime/mgcmark.go:greyobject)
+
+' 写屏障处理
+User -> WriteBarrier: 写入指针字段\n(src/runtime/mbarrier.go:writebarrierptr)
+activate WriteBarrier
+WriteBarrier -> WriteBarrier: 混合写屏障\n(src/runtime/mbarrier.go:writebarrierptr)
+WriteBarrier -> ConcurrentMark: 记录指针修改\n(src/runtime/mbarrier.go:wbBufFlush)
+WriteBarrier --> User: 写入完成
+deactivate WriteBarrier
+
+' 辅助标记
+User -> Runtime: 分配内存\n(src/runtime/malloc.go:mallocgc)
+activate Runtime
+Runtime -> ConcurrentMark: 检查是否需要辅助标记\n(src/runtime/malloc.go:gcAssistAlloc)
+activate ConcurrentMark #DarkGreen
+ConcurrentMark -> ConcurrentMark: 执行辅助标记\n(src/runtime/mgc.go:gcAssistAlloc)
+ConcurrentMark --> Runtime: 辅助标记完成
+deactivate ConcurrentMark
+Runtime --> User: 返回分配的内存
+deactivate Runtime
+
+' 标记完成
+ConcurrentMark -> ConcurrentMark: 检查标记是否完成\n(src/runtime/mgc.go:gcMarkDone)
+ConcurrentMark -> MarkTermination: 标记完成，开始终止阶段\n(src/runtime/mgc.go:gcMarkTermination)
+activate MarkTermination
+deactivate ConcurrentMark
+
+' 标记终止阶段
+MarkTermination -> Scheduler: 请求STW\n(src/runtime/mgc.go:stopTheWorldWithSema)
+activate Scheduler
+Scheduler --> MarkTermination: STW完成
+deactivate Scheduler
+
+MarkTermination -> MarkTermination: 完成剩余标记工作\n(src/runtime/mgc.go:gcMarkTermination)
+MarkTermination -> MarkTermination: 处理写屏障缓冲区\n(src/runtime/mgc.go:gcMarkTermination)
+MarkTermination -> WriteBarrier: 禁用写屏障\n(src/runtime/mgc.go:gcMarkTermination)
+activate WriteBarrier
+WriteBarrier --> MarkTermination: 写屏障禁用完成
+deactivate WriteBarrier
+
+MarkTermination -> Sweep: 准备清扫阶段\n(src/runtime/mgc.go:gcMarkTermination)
+activate Sweep
+
+MarkTermination -> Scheduler: 恢复世界\n(src/runtime/mgc.go:startTheWorldWithSema)
+activate Scheduler
+Scheduler --> MarkTermination: 恢复完成
+deactivate Scheduler
+
+MarkTermination --> GCEntry: 标记终止完成
+deactivate MarkTermination
+
+' 清扫阶段
+note right of Sweep: 并发清扫阶段，用户代码同时运行
+
+Sweep -> Sweep: 启动后台清扫\n(src/runtime/mgcsweep.go:bgsweep)
+Sweep -> Sweep: 按需清扫\n(src/runtime/mgcsweep.go:sweepone)
+
+' 按需清扫
+User -> Malloc: 分配内存\n(src/runtime/malloc.go:mallocgc)
+activate Malloc
+Malloc -> Sweep: 按需清扫\n(src/runtime/mgcsweep.go:mSpan_sweep)
+activate Sweep #DarkGreen
+Sweep -> Sweep: 清扫span\n(src/runtime/mgcsweep.go:mSpan_sweep)
+Sweep --> Malloc: 清扫完成
+deactivate Sweep
+Malloc --> User: 返回分配的内存
+deactivate Malloc
+
+Sweep --> GCEntry: 清扫完成
+deactivate Sweep
+
+' GC完成
+GCEntry -> GCController: 更新GC统计信息\n(src/runtime/mgc.go:gcController)
+activate GCController
+GCController -> GCController: 计算下次GC触发点\n(src/runtime/mgc.go:gcSetTriggerRatio)
+GCController --> GCEntry: 更新完成
+deactivate GCController
+
+GCEntry --> GCEntry: GC周期完成
+deactivate GCEntry
+
+' 内存回收
+Scheduler -> Malloc: 后台内存回收\n(src/runtime/mgcscavenge.go:bgscavenge)
+activate Malloc
+Malloc -> Malloc: 扫描未使用页\n(src/runtime/mgcscavenge.go:scavenge)
+Malloc -> Malloc: 归还内存给操作系统\n(src/runtime/mgcscavenge.go:pageUnscavenge)
+Malloc --> Scheduler: 内存回收完成
+deactivate Malloc
+
+@enduml

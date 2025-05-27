@@ -1,0 +1,137 @@
+@startuml Go调度器实现架构
+
+package "Go调度器 (src/runtime/)" {
+  [调度器入口 (src/runtime/proc.go)] as SchedEntry
+  
+  package "调度器核心组件 (src/runtime/)" {
+    [G - goroutine (src/runtime/runtime2.go)] as G
+    [M - 机器线程 (src/runtime/runtime2.go)] as M
+    [P - 处理器 (src/runtime/runtime2.go)] as P
+    [全局运行队列 (src/runtime/proc.go)] as GlobalQueue
+    [本地运行队列 (src/runtime/proc.go)] as LocalQueue
+    [空闲P列表 (src/runtime/proc.go)] as IdleP
+    [空闲M列表 (src/runtime/proc.go)] as IdleM
+  }
+  
+  package "调度器操作 (src/runtime/)" {
+    [调度循环 (src/runtime/proc.go)] as SchedLoop
+    [G创建 (src/runtime/proc.go)] as CreateG
+    [G运行 (src/runtime/proc.go)] as RunG
+    [G挂起 (src/runtime/proc.go)] as SuspendG
+    [G恢复 (src/runtime/proc.go)] as ResumeG
+    [M创建 (src/runtime/proc.go)] as CreateM
+    [P创建 (src/runtime/proc.go)] as CreateP
+    [工作窃取 (src/runtime/proc.go)] as WorkStealing
+  }
+  
+  package "系统调用处理 (src/runtime/)" {
+    [系统调用进入 (src/runtime/proc.go)] as EnterSyscall
+    [系统调用退出 (src/runtime/proc.go)] as ExitSyscall
+    [系统调用慢路径 (src/runtime/proc.go)] as SlowPath
+    [系统调用快路径 (src/runtime/proc.go)] as FastPath
+  }
+  
+  package "抢占式调度 (src/runtime/)" {
+    [协作式抢占 (src/runtime/preempt.go)] as CoopPreempt
+    [异步抢占 (src/runtime/preempt.go)] as AsyncPreempt
+    [安全点 (src/runtime/preempt.go)] as SafePoint
+    [抢占信号 (src/runtime/signal_unix.go)] as PreemptSignal
+  }
+  
+  package "特殊处理 (src/runtime/)" {
+    [锁定线程 (src/runtime/proc.go)] as LockOSThread
+    [网络轮询器 (src/runtime/netpoll.go)] as NetPoller
+    [定时器 (src/runtime/time.go)] as Timer
+    [GC辅助 (src/runtime/mgc.go)] as GCAssist
+    [跟踪 (src/runtime/trace.go)] as Trace
+  }
+}
+
+' 调度器核心关系
+SchedEntry --> G : 管理
+SchedEntry --> M : 管理
+SchedEntry --> P : 管理
+SchedEntry --> GlobalQueue : 使用
+P --> LocalQueue : 拥有
+SchedEntry --> IdleP : 管理
+SchedEntry --> IdleM : 管理
+
+' 调度器操作关系
+SchedEntry --> SchedLoop : 执行
+SchedLoop --> CreateG : 调用
+SchedLoop --> RunG : 调用
+SchedLoop --> SuspendG : 调用
+SchedLoop --> ResumeG : 调用
+SchedLoop --> CreateM : 调用
+SchedLoop --> CreateP : 调用
+SchedLoop --> WorkStealing : 执行
+
+' 系统调用关系
+RunG --> EnterSyscall : 调用
+EnterSyscall --> FastPath : 尝试
+EnterSyscall --> SlowPath : 回退
+EnterSyscall --> ExitSyscall : 完成后
+
+' 抢占关系
+SchedLoop --> CoopPreempt : 使用
+SchedLoop --> AsyncPreempt : 使用
+AsyncPreempt --> PreemptSignal : 使用
+AsyncPreempt --> SafePoint : 检查
+
+' 特殊处理关系
+SchedLoop --> LockOSThread : 处理
+SchedLoop --> NetPoller : 集成
+SchedLoop --> Timer : 集成
+SchedLoop --> GCAssist : 处理
+SchedLoop --> Trace : 支持
+
+note right of SchedEntry
+  调度器入口:
+  - 初始化G/M/P
+  - 启动调度循环
+  - 管理全局资源
+end note
+
+note right of G
+  G (goroutine):
+  - 栈
+  - 程序计数器
+  - 状态
+  - 阻塞通道
+  - 调度信息
+end note
+
+note right of M
+  M (机器线程):
+  - OS线程
+  - 当前运行的G
+  - 关联的P
+  - 缓存G
+  - 系统调用状态
+end note
+
+note right of P
+  P (处理器):
+  - 本地运行队列
+  - 缓存
+  - 状态
+  - ID
+  - 关联的M
+end note
+
+note right of WorkStealing
+  工作窃取算法:
+  - 从其他P窃取G
+  - 从全局队列获取G
+  - 负载均衡
+end note
+
+note right of AsyncPreempt
+  异步抢占:
+  - 信号触发
+  - 安全点检查
+  - 长时间运行G抢占
+  - GC STW支持
+end note
+
+@enduml

@@ -1,0 +1,163 @@
+@startuml Go并发模型实现架构
+
+package "Go并发模型 (src/)" {
+  package "运行时并发原语 (src/runtime/)" {
+    [goroutine (src/runtime/proc.go)] as Goroutine
+    [channel (src/runtime/chan.go)] as Channel
+    [select (src/runtime/select.go)] as Select
+    [sema (src/runtime/sema.go)] as Sema
+    [netpoll (src/runtime/netpoll.go)] as NetPoll
+    [timer (src/runtime/time.go)] as Timer
+  }
+  
+  package "同步原语 (src/sync/)" {
+    [Mutex (src/sync/mutex.go)] as Mutex
+    [RWMutex (src/sync/rwmutex.go)] as RWMutex
+    [WaitGroup (src/sync/waitgroup.go)] as WaitGroup
+    [Cond (src/sync/cond.go)] as Cond
+    [Once (src/sync/once.go)] as Once
+    [Pool (src/sync/pool.go)] as Pool
+    [Map (src/sync/map.go)] as SyncMap
+    [atomic (src/sync/atomic/doc.go)] as Atomic
+  }
+  
+  package "上下文 (src/context/)" {
+    [Context (src/context/context.go)] as Context
+    [WithCancel (src/context/context.go)] as WithCancel
+    [WithDeadline (src/context/context.go)] as WithDeadline
+    [WithTimeout (src/context/context.go)] as WithTimeout
+    [WithValue (src/context/context.go)] as WithValue
+  }
+  
+  package "并发模式 (src/)" {
+    [errgroup (src/golang.org/x/sync/errgroup/errgroup.go)] as ErrGroup
+    [semaphore (src/golang.org/x/sync/semaphore/semaphore.go)] as Semaphore
+    [singleflight (src/golang.org/x/sync/singleflight/singleflight.go)] as SingleFlight
+    [syncmap (src/golang.org/x/sync/syncmap/syncmap.go)] as XSyncMap
+  }
+  
+  package "调度器 (src/runtime/)" {
+    [G-M-P模型 (src/runtime/runtime2.go)] as GMP
+    [调度循环 (src/runtime/proc.go)] as SchedLoop
+    [工作窃取 (src/runtime/proc.go)] as WorkStealing
+    [系统调用处理 (src/runtime/proc.go)] as SyscallHandling
+    [抢占式调度 (src/runtime/preempt.go)] as Preemption
+  }
+  
+  package "内存模型 (src/)" {
+    [内存顺序 (src/internal/race/)] as MemoryOrder
+    [内存屏障 (src/runtime/mbarrier.go)] as MemBarrier
+    [原子操作 (src/sync/atomic/)] as AtomicOps
+    [race检测 (src/internal/race/)] as RaceDetector
+  }
+}
+
+' 运行时并发原语关系
+Goroutine --> Sema : 使用
+Channel --> Sema : 使用
+Select --> Channel : 使用
+NetPoll --> Sema : 使用
+Timer --> Sema : 使用
+
+' 同步原语关系
+Mutex --> Atomic : 使用
+RWMutex --> Atomic : 使用
+WaitGroup --> Atomic : 使用
+Cond --> Mutex : 使用
+Once --> Atomic : 使用
+Pool --> Atomic : 使用
+SyncMap --> Atomic : 使用
+
+' 上下文关系
+WithCancel --> Context : 实现
+WithDeadline --> Context : 实现
+WithTimeout --> WithDeadline : 使用
+WithValue --> Context : 实现
+
+' 并发模式关系
+ErrGroup --> Context : 使用
+ErrGroup --> WaitGroup : 使用
+Semaphore --> Atomic : 使用
+SingleFlight --> Mutex : 使用
+
+' 调度器关系
+Goroutine --> GMP : 实现
+GMP --> SchedLoop : 使用
+GMP --> WorkStealing : 使用
+GMP --> SyscallHandling : 使用
+GMP --> Preemption : 使用
+
+' 内存模型关系
+Atomic --> AtomicOps : 实现
+Atomic --> MemoryOrder : 遵循
+Channel --> MemoryOrder : 遵循
+Mutex --> MemoryOrder : 遵循
+MemoryOrder --> MemBarrier : 使用
+RaceDetector --> MemoryOrder : 检测
+
+note right of Goroutine
+  goroutine实现:
+  - 轻量级线程
+  - 栈管理
+  - 调度
+  - 系统调用集成
+end note
+
+note right of Channel
+  channel实现:
+  - 缓冲/非缓冲通道
+  - 发送/接收队列
+  - 阻塞/非阻塞操作
+  - 关闭处理
+end note
+
+note right of Select
+  select实现:
+  - 多通道操作
+  - 随机选择
+  - 默认分支
+  - 阻塞/非阻塞模式
+end note
+
+note right of Mutex
+  互斥锁实现:
+  - 快速路径
+  - 自旋等待
+  - 信号量退避
+  - 饥饿模式
+end note
+
+note right of Context
+  上下文实现:
+  - 取消信号传播
+  - 超时控制
+  - 值传递
+  - 请求作用域控制
+end note
+
+note right of GMP
+  G-M-P模型:
+  - G: goroutine
+  - M: OS线程
+  - P: 处理器
+  - 全局/本地运行队列
+  - 工作窃取调度
+end note
+
+note right of MemoryOrder
+  内存顺序:
+  - happens-before关系
+  - 同步点
+  - 内存可见性
+  - 重排序限制
+end note
+
+note right of RaceDetector
+  竞态检测:
+  - 动态检测
+  - 读写跟踪
+  - 锁操作跟踪
+  - 报告竞态条件
+end note
+
+@enduml

@@ -1,0 +1,78 @@
+@startuml Go链接器实现架构
+
+package "Go链接器 (src/cmd/link/)" {
+  [链接器入口 (src/cmd/link/main.go)] as LinkMain
+  
+  package "内部实现 (src/cmd/link/internal/)" {
+    [链接器核心 (src/cmd/link/internal/ld/)] as LdCore
+    [符号处理 (src/cmd/link/internal/sym/)] as SymProc
+    [目标文件加载 (src/cmd/link/internal/loader/)] as ObjLoader
+    [可执行文件生成 (src/cmd/link/internal/ld/outbuf.go)] as ExeGen
+    [重定位 (src/cmd/link/internal/ld/reloc.go)] as Reloc
+    [符号解析 (src/cmd/link/internal/ld/sym.go)] as SymResolve
+  }
+  
+  package "平台特定实现 (src/cmd/link/internal/)" {
+    [ELF格式 (src/cmd/link/internal/ld/elf.go)] as ELF
+    [Mach-O格式 (src/cmd/link/internal/ld/macho.go)] as MachO
+    [PE格式 (src/cmd/link/internal/ld/pe.go)] as PE
+    [XCOFF格式 (src/cmd/link/internal/ld/xcoff.go)] as XCOFF
+  }
+  
+  package "调试信息 (src/cmd/link/internal/)" {
+    [DWARF生成 (src/cmd/link/internal/ld/dwarf.go)] as Dwarf
+    [符号表生成 (src/cmd/link/internal/ld/symtab.go)] as SymTab
+    [行号表 (src/cmd/link/internal/ld/pcln.go)] as LineTab
+  }
+}
+
+' 链接器流程
+LinkMain --> LdCore : 调用
+LdCore --> ObjLoader : 加载对象文件
+ObjLoader --> SymProc : 处理符号
+LdCore --> SymResolve : 解析符号
+LdCore --> Reloc : 执行重定位
+LdCore --> ExeGen : 生成可执行文件
+
+' 平台特定关系
+ExeGen --> ELF : Linux平台
+ExeGen --> MachO : macOS平台
+ExeGen --> PE : Windows平台
+ExeGen --> XCOFF : AIX平台
+
+' 调试信息关系
+ExeGen --> Dwarf : 生成调试信息
+ExeGen --> SymTab : 生成符号表
+ExeGen --> LineTab : 生成行号表
+
+note right of LinkMain
+  链接器入口:
+  1. 解析命令行参数
+  2. 设置链接目标
+  3. 启动链接流程
+end note
+
+note right of ObjLoader
+  目标文件加载:
+  - 解析目标文件格式
+  - 加载符号信息
+  - 加载重定位信息
+  - 加载调试信息
+end note
+
+note right of Reloc
+  重定位处理:
+  - 符号地址解析
+  - 代码修补
+  - 外部符号链接
+end note
+
+note right of ExeGen
+  可执行文件生成:
+  - 段布局计算
+  - 代码段生成
+  - 数据段生成
+  - 头部信息生成
+end note
+
+@enduml

@@ -1,0 +1,133 @@
+@startuml Go语言解析器实现架构
+
+package "Go语言解析器 (src/go/)" {
+  package "词法分析 (src/go/)" {
+    [token包 (src/go/token/token.go)] as Token
+    [词法单元 (src/go/token/position.go)] as Position
+    [文件集 (src/go/token/position.go)] as FileSet
+    [扫描器 (src/go/scanner/scanner.go)] as Scanner
+    [错误处理 (src/go/scanner/errors.go)] as ScanErrors
+  }
+  
+  package "语法分析 (src/go/)" {
+    [parser包 (src/go/parser/parser.go)] as Parser
+    [接口 (src/go/parser/interface.go)] as ParserInterface
+    [解析模式 (src/go/parser/parser.go)] as ParseMode
+    [表达式解析 (src/go/parser/parser.go)] as ExprParser
+    [语句解析 (src/go/parser/parser.go)] as StmtParser
+    [声明解析 (src/go/parser/parser.go)] as DeclParser
+  }
+  
+  package "抽象语法树 (src/go/)" {
+    [ast包 (src/go/ast/ast.go)] as AST
+    [节点接口 (src/go/ast/ast.go)] as Node
+    [表达式 (src/go/ast/expr.go)] as Expr
+    [语句 (src/go/ast/stmt.go)] as Stmt
+    [声明 (src/go/ast/decl.go)] as Decl
+    [注释 (src/go/ast/comment.go)] as Comment
+    [作用域 (src/go/ast/scope.go)] as Scope
+    [标识符 (src/go/ast/ident.go)] as Ident
+  }
+  
+  package "类型检查 (src/go/)" {
+    [types包 (src/go/types/api.go)] as Types
+    [类型检查器 (src/go/types/check.go)] as Checker
+    [类型 (src/go/types/type.go)] as Type
+    [对象 (src/go/types/object.go)] as Object
+    [作用域 (src/go/types/scope.go)] as TypeScope
+    [选择器 (src/go/types/selection.go)] as Selection
+    [导入 (src/go/types/import.go)] as Import
+    [内置 (src/go/types/builtins.go)] as Builtin
+  }
+  
+  package "打印和格式化 (src/go/)" {
+    [printer包 (src/go/printer/printer.go)] as Printer
+    [格式化配置 (src/go/printer/config.go)] as PrintConfig
+    [format包 (src/go/format/format.go)] as Format
+  }
+  
+  package "文档生成 (src/go/)" {
+    [doc包 (src/go/doc/doc.go)] as Doc
+    [包文档 (src/go/doc/package.go)] as Package
+    [示例 (src/go/doc/example.go)] as DocExample
+    [注释 (src/go/doc/comment/comment.go)] as DocComment
+  }
+}
+
+' 词法分析关系
+Token <-- Scanner : 使用
+Position <-- Scanner : 使用
+FileSet <-- Scanner : 使用
+Scanner --> ScanErrors : 生成
+
+' 语法分析关系
+Parser --> Scanner : 使用
+Parser --> AST : 生成
+ParserInterface <-- Parser : 实现
+ExprParser <-- Parser : 包含
+StmtParser <-- Parser : 包含
+DeclParser <-- Parser : 包含
+
+' 抽象语法树关系
+Node <|-- Expr : 继承
+Node <|-- Stmt : 继承
+Node <|-- Decl : 继承
+AST --> Scope : 包含
+AST --> Comment : 包含
+AST --> Ident : 包含
+
+' 类型检查关系
+Checker --> AST : 分析
+Checker --> Type : 生成
+Checker --> Object : 生成
+Checker --> TypeScope : 使用
+Checker --> Selection : 生成
+Checker --> Import : 处理
+Checker --> Builtin : 使用
+
+' 打印和格式化关系
+Printer --> AST : 处理
+Printer --> PrintConfig : 使用
+Format --> Printer : 使用
+
+' 文档生成关系
+Doc --> AST : 分析
+Doc --> Package : 生成
+Doc --> DocExample : 提取
+Doc --> DocComment : 解析
+
+note right of Scanner
+  扫描器实现:
+  - 源代码扫描
+  - 标记识别
+  - 位置跟踪
+  - 错误报告
+end note
+
+note right of Parser
+  解析器实现:
+  - 递归下降解析
+  - 表达式解析
+  - 语句解析
+  - 声明解析
+  - 错误恢复
+end note
+
+note right of Checker
+  类型检查器:
+  - 标识符解析
+  - 类型推断
+  - 类型兼容性检查
+  - 常量求值
+  - 接口实现验证
+end note
+
+note right of Doc
+  文档生成:
+  - 包文档提取
+  - 函数文档提取
+  - 类型文档提取
+  - 示例代码提取
+end note
+
+@enduml

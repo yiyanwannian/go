@@ -1,0 +1,399 @@
+@startuml Go并发模型时序图
+
+' Go并发模型时序图展示了Go语言并发原语的工作流程，包括：
+' 1. goroutine的创建和调度
+' 2. channel的发送和接收操作
+' 3. select的多路复用机制
+' 4. 同步原语(Mutex, WaitGroup等)的工作方式
+' 5. context的取消传播机制
+' 6. 调度器的工作窃取和负载均衡
+
+'这个时序图详细展示了Go并发模型的核心组件如何交互，包括goroutine的创建和调度、channel的操作、select的多路复用机制、同步原语的工作方式以及context的取消传播机制。每个操作都标注了对应的源代码位置，让您可以更深入地理解Go的内部实现。
+'时序图分为几个主要部分：
+'goroutine创建和调度：展示了从go语句到goroutine创建、入队和执行的完整流程，包括调度器的工作窃取机制。
+'channel操作：详细说明了channel的创建、发送、接收和关闭操作，以及在不同情况下（有等待者、缓冲区有空间/数据、需要阻塞）的处理逻辑。
+'select操作：展示了select语句的实现，包括case的随机排序、尝试非阻塞操作、注册到多个channel以及唤醒机制。
+'同步原语：描述了Mutex和WaitGroup等同步原语的工作方式，包括Mutex的快速路径/慢路径、自旋等待以及WaitGroup的计数和唤醒机制。
+'Context：展示了Context的创建、取消和等待机制，以及取消信号如何在Context树中传播。
+
+autonumber
+
+' 参与者定义
+participant "用户代码" as User
+participant "go语句\n(src/runtime/go.go)" as GoStmt
+participant "goroutine\n(src/runtime/proc.go)" as Goroutine
+participant "调度器\n(src/runtime/proc.go)" as Scheduler
+participant "P处理器\n(src/runtime/proc.go)" as Processor
+participant "M线程\n(src/runtime/proc.go)" as Thread
+participant "channel\n(src/runtime/chan.go)" as Channel
+participant "select\n(src/runtime/select.go)" as Select
+participant "Mutex\n(src/sync/mutex.go)" as Mutex
+participant "WaitGroup\n(src/sync/waitgroup.go)" as WaitGroup
+participant "Context\n(src/context/context.go)" as Context
+
+' ==== goroutine创建和调度 ====
+group goroutine创建和调度
+  User -> GoStmt: go func()\n(src/runtime/go.go:newproc)
+  activate GoStmt
+  
+  GoStmt -> Goroutine: 创建goroutine\n(src/runtime/go.go:newproc1)
+  activate Goroutine
+  
+  Goroutine -> Goroutine: 初始化g结构体\n(src/runtime/proc.go:malg)
+  Goroutine -> Goroutine: 设置栈和入口函数\n(src/runtime/proc.go:newproc1)
+  
+  Goroutine -> Scheduler: 将g放入运行队列\n(src/runtime/proc.go:runqput)
+  activate Scheduler
+  
+  Scheduler -> Processor: 将g放入P的本地队列\n(src/runtime/proc.go:runqput)
+  activate Processor
+  Processor --> Scheduler: 入队完成
+  deactivate Processor
+  
+  Scheduler --> Goroutine: 调度完成
+  deactivate Scheduler
+  
+  Goroutine --> GoStmt: goroutine创建完成
+  deactivate Goroutine
+  
+  GoStmt --> User: 返回，继续执行
+  deactivate GoStmt
+  
+  ' 调度执行
+  Scheduler -> Scheduler: 调度循环\n(src/runtime/proc.go:schedule)
+  activate Scheduler
+  
+  Scheduler -> Processor: 获取下一个可运行的g\n(src/runtime/proc.go:findrunnable)
+  activate Processor
+  
+  alt 本地队列有goroutine
+    Processor -> Processor: 从本地队列获取g\n(src/runtime/proc.go:runqget)
+  else 本地队列为空
+    Processor -> Processor: 从全局队列获取g\n(src/runtime/proc.go:globrunqget)
+  else 全局队列也为空
+    Processor -> Processor: 从其他P窃取g\n(src/runtime/proc.go:stealWork)
+  end
+  
+  Processor --> Scheduler: 返回可运行的g
+  deactivate Processor
+  
+  Scheduler -> Thread: 执行goroutine\n(src/runtime/proc.go:execute)
+  activate Thread
+  
+  Thread -> Goroutine: 切换到g的栈执行\n(src/runtime/asm_amd64.s:gogo)
+  activate Goroutine
+  
+  Goroutine -> User: 执行用户函数
+  activate User
+  User --> Goroutine: 函数返回
+  deactivate User
+  
+  Goroutine -> Scheduler: 函数执行完成\n(src/runtime/proc.go:goexit1)
+  deactivate Goroutine
+  
+  Thread --> Scheduler: 执行完成
+  deactivate Thread
+  
+  Scheduler -> Scheduler: 继续调度循环\n(src/runtime/proc.go:schedule)
+  deactivate Scheduler
+end
+
+' ==== channel操作 ====
+group channel操作
+  ' 创建channel
+  User -> Channel: make(chan T, size)\n(src/runtime/chan.go:makechan)
+  activate Channel
+  
+  Channel -> Channel: 分配内存\n(src/runtime/chan.go:makechan)
+  Channel -> Channel: 初始化缓冲区\n(src/runtime/chan.go:makechan)
+  
+  Channel --> User: 返回channel
+  deactivate Channel
+  
+  ' 发送操作
+  User -> Channel: ch <- value\n(src/runtime/chan.go:chansend1)
+  activate Channel
+  
+  Channel -> Channel: 获取锁\n(src/runtime/chan.go:lock)
+  
+  alt 有接收者等待
+    Channel -> Goroutine: 直接发送给接收者\n(src/runtime/chan.go:send)
+    activate Goroutine
+    Channel -> Scheduler: 将接收者设为可运行\n(src/runtime/proc.go:ready)
+    activate Scheduler
+    Scheduler --> Channel: 设置完成
+    deactivate Scheduler
+    Goroutine --> Channel: 接收完成
+    deactivate Goroutine
+  else 缓冲区有空间
+    Channel -> Channel: 将数据放入缓冲区\n(src/runtime/chan.go:chansend)
+  else 缓冲区已满或无缓冲
+    Channel -> Scheduler: 将发送者挂起\n(src/runtime/proc.go:gopark)
+    activate Scheduler
+    Scheduler -> Goroutine: 保存状态并挂起\n(src/runtime/proc.go:gopark)
+    activate Goroutine
+    Goroutine --> Scheduler: 挂起完成
+    deactivate Goroutine
+    Scheduler --> Channel: 挂起完成
+    deactivate Scheduler
+    
+    note right of Channel: 等待接收者
+    
+    Channel -> Channel: 接收者到达\n(src/runtime/chan.go:recv)
+    Channel -> Scheduler: 唤醒发送者\n(src/runtime/proc.go:goready)
+    activate Scheduler
+    Scheduler -> Goroutine: 将发送者设为可运行\n(src/runtime/proc.go:goready)
+    activate Goroutine
+    Goroutine --> Scheduler: 设置完成
+    deactivate Goroutine
+    Scheduler --> Channel: 唤醒完成
+    deactivate Scheduler
+  end
+  
+  Channel -> Channel: 释放锁\n(src/runtime/chan.go:unlock)
+  
+  Channel --> User: 发送完成
+  deactivate Channel
+  
+  ' 接收操作
+  User -> Channel: value := <-ch\n(src/runtime/chan.go:chanrecv1)
+  activate Channel
+  
+  Channel -> Channel: 获取锁\n(src/runtime/chan.go:lock)
+  
+  alt 有发送者等待
+    Channel -> Goroutine: 直接从发送者接收\n(src/runtime/chan.go:recv)
+    activate Goroutine
+    Channel -> Scheduler: 将发送者设为可运行\n(src/runtime/proc.go:ready)
+    activate Scheduler
+    Scheduler --> Channel: 设置完成
+    deactivate Scheduler
+    Goroutine --> Channel: 发送完成
+    deactivate Goroutine
+  else 缓冲区有数据
+    Channel -> Channel: 从缓冲区取数据\n(src/runtime/chan.go:chanrecv)
+  else 缓冲区为空或无缓冲
+    Channel -> Scheduler: 将接收者挂起\n(src/runtime/proc.go:gopark)
+    activate Scheduler
+    Scheduler -> Goroutine: 保存状态并挂起\n(src/runtime/proc.go:gopark)
+    activate Goroutine
+    Goroutine --> Scheduler: 挂起完成
+    deactivate Goroutine
+    Scheduler --> Channel: 挂起完成
+    deactivate Scheduler
+    
+    note right of Channel: 等待发送者
+    
+    Channel -> Channel: 发送者到达\n(src/runtime/chan.go:send)
+    Channel -> Scheduler: 唤醒接收者\n(src/runtime/proc.go:goready)
+    activate Scheduler
+    Scheduler -> Goroutine: 将接收者设为可运行\n(src/runtime/proc.go:goready)
+    activate Goroutine
+    Goroutine --> Scheduler: 设置完成
+    deactivate Goroutine
+    Scheduler --> Channel: 唤醒完成
+    deactivate Scheduler
+  end
+  
+  Channel -> Channel: 释放锁\n(src/runtime/chan.go:unlock)
+  
+  Channel --> User: 接收完成，返回值
+  deactivate Channel
+  
+  ' 关闭channel
+  User -> Channel: close(ch)\n(src/runtime/chan.go:closechan)
+  activate Channel
+  
+  Channel -> Channel: 获取锁\n(src/runtime/chan.go:lock)
+  Channel -> Channel: 标记为已关闭\n(src/runtime/chan.go:closechan)
+  
+  Channel -> Channel: 唤醒所有等待的接收者\n(src/runtime/chan.go:closechan)
+  Channel -> Channel: 唤醒所有等待的发送者\n(src/runtime/chan.go:closechan)
+  
+  Channel -> Scheduler: 将所有等待的g设为可运行\n(src/runtime/proc.go:goready)
+  activate Scheduler
+  Scheduler --> Channel: 设置完成
+  deactivate Scheduler
+  
+  Channel -> Channel: 释放锁\n(src/runtime/chan.go:unlock)
+  
+  Channel --> User: 关闭完成
+  deactivate Channel
+end
+
+' ==== select操作 ====
+group select操作
+  User -> Select: select{case...}\n(src/runtime/select.go:selectgo)
+  activate Select
+  
+  Select -> Select: 创建scase数组\n(src/runtime/select.go:selectgo)
+  Select -> Select: 随机排序case\n(src/runtime/select.go:selectgo)
+  
+  Select -> Select: 加锁所有channel\n(src/runtime/select.go:sellock)
+  
+  alt 有可立即完成的case
+    Select -> Select: 找到第一个可执行的case\n(src/runtime/select.go:selectgo)
+    Select -> Channel: 执行对应的发送/接收\n(src/runtime/select.go:selectgo)
+    activate Channel
+    Channel --> Select: 操作完成
+    deactivate Channel
+  else 没有可立即完成的case
+    alt 有default分支
+      Select -> Select: 执行default分支\n(src/runtime/select.go:selectgo)
+    else 无default分支
+      Select -> Select: 将当前g注册到所有channel\n(src/runtime/select.go:selectgo)
+      
+      Select -> Scheduler: 挂起当前g\n(src/runtime/proc.go:gopark)
+      activate Scheduler
+      Scheduler --> Select: 挂起完成
+      deactivate Scheduler
+      
+      note right of Select: 等待任一channel就绪
+      
+      Select -> Select: 被唤醒，找到就绪的channel\n(src/runtime/select.go:selectgo)
+      Select -> Channel: 执行对应的发送/接收\n(src/runtime/select.go:selectgo)
+      activate Channel
+      Channel --> Select: 操作完成
+      deactivate Channel
+    end
+  end
+  
+  Select -> Select: 解锁所有channel\n(src/runtime/select.go:selunlock)
+  
+  Select --> User: 返回选中的case索引
+  deactivate Select
+end
+
+' ==== 同步原语 ====
+group 同步原语
+  ' Mutex
+  User -> Mutex: Lock()\n(src/sync/mutex.go:Lock)
+  activate Mutex
+  
+  Mutex -> Mutex: 尝试快速路径获取锁\n(src/sync/mutex.go:Lock)
+  
+  alt 快速路径成功
+    Mutex --> User: 获取锁成功
+  else 快速路径失败
+    Mutex -> Mutex: 进入慢路径\n(src/sync/mutex.go:lockSlow)
+    
+    loop 自旋和等待
+      Mutex -> Mutex: 尝试自旋获取锁\n(src/sync/mutex.go:lockSlow)
+      
+      alt 自旋成功
+        Mutex --> User: 获取锁成功
+        deactivate Mutex
+      else 自旋失败
+        Mutex -> Mutex: 进入等待状态\n(src/sync/mutex.go:lockSlow)
+        Mutex -> Mutex: 更新等待队列\n(src/sync/mutex.go:lockSlow)
+        
+        Mutex -> Scheduler: 挂起当前g\n(src/runtime/sema.go:semacquire)
+        activate Scheduler
+        Scheduler --> Mutex: 挂起完成
+        deactivate Scheduler
+        
+        note right of Mutex: 等待锁释放
+        
+        Mutex -> Mutex: 被唤醒，再次尝试获取锁\n(src/sync/mutex.go:lockSlow)
+      end
+    end
+  end
+  
+  User -> Mutex: Unlock()\n(src/sync/mutex.go:Unlock)
+  activate Mutex
+  
+  Mutex -> Mutex: 释放锁\n(src/sync/mutex.go:Unlock)
+  
+  alt 有等待者
+    Mutex -> Scheduler: 唤醒一个等待者\n(src/runtime/sema.go:semrelease)
+    activate Scheduler
+    Scheduler --> Mutex: 唤醒完成
+    deactivate Scheduler
+  end
+  
+  Mutex --> User: 释放锁完成
+  deactivate Mutex
+  
+  ' WaitGroup
+  User -> WaitGroup: Add(delta)\n(src/sync/waitgroup.go:Add)
+  activate WaitGroup
+  
+  WaitGroup -> WaitGroup: 原子增加计数\n(src/sync/waitgroup.go:Add)
+  
+  WaitGroup --> User: 增加完成
+  deactivate WaitGroup
+  
+  User -> WaitGroup: Done()\n(src/sync/waitgroup.go:Done)
+  activate WaitGroup
+  
+  WaitGroup -> WaitGroup: Add(-1)\n(src/sync/waitgroup.go:Done)
+  
+  alt 计数为0
+    WaitGroup -> Scheduler: 唤醒所有等待者\n(src/runtime/sema.go:semrelease)
+    activate Scheduler
+    Scheduler --> WaitGroup: 唤醒完成
+    deactivate Scheduler
+  end
+  
+  WaitGroup --> User: 完成
+  deactivate WaitGroup
+  
+  User -> WaitGroup: Wait()\n(src/sync/waitgroup.go:Wait)
+  activate WaitGroup
+  
+  alt 计数为0
+    WaitGroup --> User: 立即返回
+  else 计数不为0
+    WaitGroup -> Scheduler: 挂起当前g\n(src/runtime/sema.go:semacquire)
+    activate Scheduler
+    Scheduler --> WaitGroup: 挂起完成
+    deactivate Scheduler
+    
+    note right of WaitGroup: 等待计数变为0
+    
+    WaitGroup -> WaitGroup: 被唤醒\n(src/sync/waitgroup.go:Wait)
+    WaitGroup --> User: 等待完成
+  end
+  deactivate WaitGroup
+end
+
+' ==== Context ====
+group Context
+  ' 创建带取消的Context
+  User -> Context: WithCancel(parent)\n(src/context/context.go:WithCancel)
+  activate Context
+  
+  Context -> Context: 创建cancelCtx\n(src/context/context.go:newCancelCtx)
+  Context -> Context: 关联到父Context\n(src/context/context.go:propagateCancel)
+  
+  Context --> User: 返回ctx和cancel函数
+  deactivate Context
+  
+  ' 取消Context
+  User -> Context: cancel()\n(src/context/context.go:cancelCtx.cancel)
+  activate Context
+  
+  Context -> Context: 标记为已取消\n(src/context/context.go:cancelCtx.cancel)
+  Context -> Context: 关闭done通道\n(src/context/context.go:cancelCtx.cancel)
+  
+  Context -> Context: 取消所有子Context\n(src/context/context.go:cancelCtx.cancel)
+  
+  Context --> User: 取消完成
+  deactivate Context
+  
+  ' 等待Context取消
+  User -> Context: <-ctx.Done()\n(src/context/context.go:cancelCtx.Done)
+  activate Context
+  
+  alt 已取消
+    Context --> User: 通道已关闭，立即返回
+  else 未取消
+    note right of Context: 阻塞等待取消
+    
+    Context -> Context: 被取消\n(src/context/context.go:cancelCtx.cancel)
+    Context --> User: 通道关闭，返回
+  end
+  deactivate Context
+end
+
+@enduml

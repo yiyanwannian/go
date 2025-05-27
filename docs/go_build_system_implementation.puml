@@ -1,0 +1,179 @@
+@startuml Go构建系统实现架构
+
+package "Go构建系统 (src/cmd/go/)" {
+  [go命令入口 (src/cmd/go/main.go)] as GoMain
+  
+  package "构建命令 (src/cmd/go/internal/)" {
+    [build命令 (src/cmd/go/internal/work/build.go)] as BuildCmd
+    [run命令 (src/cmd/go/internal/run/run.go)] as RunCmd
+    [test命令 (src/cmd/go/internal/test/test.go)] as TestCmd
+    [install命令 (src/cmd/go/internal/work/build.go)] as InstallCmd
+    [generate命令 (src/cmd/go/internal/generate/generate.go)] as GenerateCmd
+    [clean命令 (src/cmd/go/internal/clean/clean.go)] as CleanCmd
+  }
+  
+  package "包管理 (src/cmd/go/internal/)" {
+    [包加载 (src/cmd/go/internal/load/load.go)] as Load
+    [包解析 (src/cmd/go/internal/load/pkg.go)] as PkgParse
+    [导入路径 (src/cmd/go/internal/load/path.go)] as ImportPath
+    [构建标签 (src/cmd/go/internal/load/tag.go)] as BuildTags
+    [包依赖 (src/cmd/go/internal/load/deps.go)] as Deps
+  }
+  
+  package "构建执行 (src/cmd/go/internal/work/)" {
+    [构建动作 (src/cmd/go/internal/work/action.go)] as Action
+    [执行器 (src/cmd/go/internal/work/exec.go)] as Exec
+    [构建ID (src/cmd/go/internal/work/buildid.go)] as BuildID
+    [构建模式 (src/cmd/go/internal/work/build.go)] as BuildMode
+    [构建队列 (src/cmd/go/internal/work/action.go)] as BuildQueue
+  }
+  
+  package "缓存系统 (src/cmd/go/internal/)" {
+    [构建缓存 (src/cmd/go/internal/cache/cache.go)] as Cache
+    [缓存键 (src/cmd/go/internal/cache/hash.go)] as CacheKey
+    [缓存存储 (src/cmd/go/internal/cache/cache.go)] as CacheStorage
+    [缓存清理 (src/cmd/go/internal/clean/clean.go)] as CacheClean
+  }
+  
+  package "模块系统 (src/cmd/go/internal/)" {
+    [模块加载 (src/cmd/go/internal/modload/load.go)] as ModLoad
+    [模块解析 (src/cmd/go/internal/modload/modfile.go)] as ModParse
+    [模块下载 (src/cmd/go/internal/modfetch/fetch.go)] as ModFetch
+    [模块缓存 (src/cmd/go/internal/modfetch/cache.go)] as ModCache
+    [模块版本 (src/cmd/go/internal/modfetch/version.go)] as ModVersion
+    [go.mod解析 (src/cmd/go/internal/modfile/read.go)] as GoModParse
+  }
+  
+  package "工具集成 (src/cmd/go/internal/)" {
+    [编译器调用 (src/cmd/go/internal/work/exec.go)] as CompilerExec
+    [链接器调用 (src/cmd/go/internal/work/exec.go)] as LinkerExec
+    [汇编器调用 (src/cmd/go/internal/work/exec.go)] as AsmExec
+    [cgo调用 (src/cmd/go/internal/work/exec.go)] as CgoExec
+    [测试工具 (src/cmd/go/internal/test/test.go)] as TestExec
+    [覆盖率工具 (src/cmd/go/internal/test/cover.go)] as CoverExec
+  }
+  
+  package "文件系统 (src/cmd/go/internal/)" {
+    [文件系统接口 (src/cmd/go/internal/fsys/fsys.go)] as Fsys
+    [工作目录 (src/cmd/go/internal/base/path.go)] as WorkDir
+    [GOPATH (src/cmd/go/internal/cfg/cfg.go)] as GOPATH
+    [GOROOT (src/cmd/go/internal/cfg/cfg.go)] as GOROOT
+    [文件搜索 (src/cmd/go/internal/search/search.go)] as Search
+  }
+}
+
+' 命令关系
+GoMain --> BuildCmd : 调用
+GoMain --> RunCmd : 调用
+GoMain --> TestCmd : 调用
+GoMain --> InstallCmd : 调用
+GoMain --> GenerateCmd : 调用
+GoMain --> CleanCmd : 调用
+
+' 包管理关系
+BuildCmd --> Load : 使用
+Load --> PkgParse : 使用
+Load --> ImportPath : 使用
+Load --> BuildTags : 使用
+Load --> Deps : 使用
+
+' 构建执行关系
+BuildCmd --> Action : 创建
+Action --> Exec : 执行
+Action --> BuildID : 生成
+Action --> BuildMode : 使用
+Action --> BuildQueue : 使用
+
+' 缓存系统关系
+Exec --> Cache : 使用
+Cache --> CacheKey : 生成
+Cache --> CacheStorage : 使用
+CleanCmd --> CacheClean : 执行
+
+' 模块系统关系
+Load --> ModLoad : 使用
+ModLoad --> ModParse : 使用
+ModLoad --> ModFetch : 使用
+ModFetch --> ModCache : 使用
+ModFetch --> ModVersion : 使用
+ModParse --> GoModParse : 使用
+
+' 工具集成关系
+Exec --> CompilerExec : 调用
+Exec --> LinkerExec : 调用
+Exec --> AsmExec : 调用
+Exec --> CgoExec : 调用
+TestCmd --> TestExec : 使用
+TestCmd --> CoverExec : 使用
+
+' 文件系统关系
+Load --> Fsys : 使用
+Load --> WorkDir : 使用
+Load --> GOPATH : 使用
+Load --> GOROOT : 使用
+Load --> Search : 使用
+
+note right of GoMain
+  go命令入口:
+  - 解析命令行
+  - 分发子命令
+  - 环境初始化
+end note
+
+note right of BuildCmd
+  build命令:
+  - 包依赖分析
+  - 增量构建
+  - 并行编译
+  - 缓存利用
+end note
+
+note right of Load
+  包加载:
+  - 解析源文件
+  - 处理构建标签
+  - 解析导入
+  - 构建依赖图
+end note
+
+note right of Action
+  构建动作:
+  - 表示单个构建步骤
+  - 依赖跟踪
+  - 并行执行
+  - 缓存检查
+end note
+
+note right of Cache
+  构建缓存:
+  - 基于内容的缓存
+  - 缓存键计算
+  - 缓存命中检测
+  - 缓存存储管理
+end note
+
+note right of ModLoad
+  模块加载:
+  - 解析go.mod
+  - 解析依赖
+  - 版本选择
+  - 模块下载
+end note
+
+note right of Exec
+  执行器:
+  - 工具调用
+  - 环境设置
+  - 命令行构建
+  - 错误处理
+end note
+
+note right of Fsys
+  文件系统:
+  - 抽象文件访问
+  - 支持模块文件系统
+  - 支持GOPATH模式
+  - 文件查找
+end note
+
+@enduml

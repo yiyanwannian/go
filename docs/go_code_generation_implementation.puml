@@ -1,0 +1,161 @@
+@startuml Go代码生成实现架构
+
+package "Go代码生成 (src/)" {
+  package "go:generate (src/cmd/go/internal/)" {
+    [generate命令 (src/cmd/go/internal/generate/generate.go)] as GenerateCmd
+    [指令解析 (src/cmd/go/internal/generate/generate.go)] as DirectiveParse
+    [命令执行 (src/cmd/go/internal/generate/generate.go)] as CmdExec
+    [环境设置 (src/cmd/go/internal/generate/generate.go)] as EnvSetup
+    [文件扫描 (src/cmd/go/internal/generate/generate.go)] as FileScan
+  }
+  
+  package "标准代码生成器 (src/cmd/)" {
+    [stringer (src/cmd/stringer/stringer.go)] as Stringer
+    [yacc (src/cmd/yacc/yacc.go)] as Yacc
+    [cgo (src/cmd/cgo/main.go)] as CGO
+    [compile (src/cmd/compile/internal/noder/noder.go)] as SSAGen
+    [asm (src/cmd/asm/internal/asm/asm.go)] as AsmGen
+  }
+  
+  package "反射与元编程 (src/)" {
+    [reflect包 (src/reflect/value.go)] as Reflect
+    [类型信息 (src/reflect/type.go)] as TypeInfo
+    [结构体标签 (src/reflect/type.go)] as StructTag
+    [方法调用 (src/reflect/value.go)] as MethodCall
+    [动态创建 (src/reflect/value.go)] as DynamicCreate
+  }
+  
+  package "模板系统 (src/)" {
+    [text/template (src/text/template/template.go)] as TextTemplate
+    [模板解析 (src/text/template/parse/parse.go)] as TemplateParse
+    [模板执行 (src/text/template/exec.go)] as TemplateExec
+    [html/template (src/html/template/template.go)] as HTMLTemplate
+    [模板函数 (src/text/template/funcs.go)] as TemplateFuncs
+  }
+  
+  package "AST处理 (src/go/)" {
+    [go/ast (src/go/ast/ast.go)] as AST
+    [go/parser (src/go/parser/parser.go)] as Parser
+    [go/token (src/go/token/position.go)] as Token
+    [go/types (src/go/types/type.go)] as Types
+    [go/printer (src/go/printer/printer.go)] as Printer
+    [go/format (src/go/format/format.go)] as Format
+  }
+  
+  package "源代码生成 (src/)" {
+    [go/build (src/go/build/build.go)] as Build
+    [go/importer (src/go/importer/importer.go)] as Importer
+    [go/constant (src/go/constant/value.go)] as Constant
+    [go/doc (src/go/doc/doc.go)] as Doc
+    [go/scanner (src/go/scanner/scanner.go)] as Scanner
+  }
+}
+
+' go:generate关系
+GenerateCmd --> DirectiveParse : 使用
+GenerateCmd --> CmdExec : 使用
+GenerateCmd --> EnvSetup : 使用
+GenerateCmd --> FileScan : 使用
+
+' 标准代码生成器关系
+GenerateCmd --> Stringer : 调用
+GenerateCmd --> Yacc : 调用
+GenerateCmd --> CGO : 调用
+Stringer --> AST : 使用
+Stringer --> Parser : 使用
+Stringer --> Printer : 使用
+Yacc --> Format : 使用
+CGO --> AST : 使用
+
+' 反射与元编程关系
+Reflect --> TypeInfo : 使用
+Reflect --> StructTag : 使用
+Reflect --> MethodCall : 提供
+Reflect --> DynamicCreate : 提供
+
+' 模板系统关系
+TextTemplate --> TemplateParse : 使用
+TextTemplate --> TemplateExec : 使用
+TextTemplate --> TemplateFuncs : 使用
+HTMLTemplate --> TextTemplate : 扩展
+
+' AST处理关系
+Parser --> Scanner : 使用
+Parser --> Token : 使用
+Parser --> AST : 构建
+Types --> AST : 分析
+Printer --> AST : 使用
+Format --> Printer : 使用
+
+' 源代码生成关系
+Build --> Parser : 使用
+Importer --> Types : 使用
+Doc --> AST : 使用
+Doc --> Types : 使用
+
+note right of GenerateCmd
+  generate命令:
+  - 扫描//go:generate注释
+  - 执行指定命令
+  - 设置环境变量
+  - 支持工具链集成
+end note
+
+note right of DirectiveParse
+  指令解析:
+  - 解析//go:generate注释
+  - 支持命令简写
+  - 支持参数解析
+  - 支持正则过滤
+end note
+
+note right of Stringer
+  stringer工具:
+  - 为枚举类型生成String()方法
+  - 解析源代码
+  - 识别常量
+  - 生成格式化代码
+end note
+
+note right of CGO
+  cgo工具:
+  - C和Go互操作
+  - 生成包装代码
+  - 处理类型转换
+  - 处理内存管理
+end note
+
+note right of Reflect
+  reflect包:
+  - 运行时类型信息
+  - 动态方法调用
+  - 结构体字段访问
+  - 动态值创建
+end note
+
+note right of TextTemplate
+  文本模板:
+  - 模板解析
+  - 变量替换
+  - 条件逻辑
+  - 循环处理
+  - 自定义函数
+end note
+
+note right of AST
+  抽象语法树:
+  - 表示Go代码结构
+  - 支持代码分析
+  - 支持代码转换
+  - 支持代码生成
+end note
+
+note right of Build
+  go/build包:
+  - 解析构建约束
+  - 处理导入路径
+  - 解析源文件
+  - 构建包信息
+end note
+
+@enduml

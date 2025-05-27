@@ -1,0 +1,172 @@
+@startuml Go标准库实现架构
+
+package "Go标准库 (src/)" {
+  package "IO相关 (src/)" {
+    [io (src/io/io.go)] as IO
+    [io/ioutil (src/io/ioutil/ioutil.go)] as IOUtil
+    [bufio (src/bufio/bufio.go)] as Bufio
+    [bytes (src/bytes/buffer.go)] as Bytes
+    [os (src/os/file.go)] as OS
+    [os/exec (src/os/exec/exec.go)] as Exec
+  }
+  
+  package "同步原语 (src/sync/)" {
+    [Mutex (src/sync/mutex.go)] as Mutex
+    [RWMutex (src/sync/rwmutex.go)] as RWMutex
+    [WaitGroup (src/sync/waitgroup.go)] as WaitGroup
+    [Cond (src/sync/cond.go)] as Cond
+    [Once (src/sync/once.go)] as Once
+    [Pool (src/sync/pool.go)] as Pool
+    [Map (src/sync/map.go)] as SyncMap
+    [atomic (src/sync/atomic/doc.go)] as Atomic
+  }
+  
+  package "网络 (src/net/)" {
+    [TCP (src/net/tcpsock.go)] as TCP
+    [UDP (src/net/udpsock.go)] as UDP
+    [IP (src/net/ip.go)] as IP
+    [DNS (src/net/dnsclient.go)] as DNS
+    [http (src/net/http/server.go)] as HTTP
+    [http/client (src/net/http/client.go)] as HTTPClient
+    [http/transport (src/net/http/transport.go)] as HTTPTransport
+    [url (src/net/url/url.go)] as URL
+  }
+  
+  package "编码 (src/encoding/)" {
+    [json (src/encoding/json/encode.go, src/encoding/json/decode.go)] as JSON
+    [xml (src/encoding/xml/marshal.go, src/encoding/xml/xml.go)] as XML
+    [base64 (src/encoding/base64/base64.go)] as Base64
+    [hex (src/encoding/hex/hex.go)] as Hex
+    [csv (src/encoding/csv/reader.go, src/encoding/csv/writer.go)] as CSV
+  }
+  
+  package "文本处理 (src/)" {
+    [strings (src/strings/strings.go)] as Strings
+    [strconv (src/strconv/atoi.go, src/strconv/itoa.go)] as Strconv
+    [unicode (src/unicode/letter.go)] as Unicode
+    [regexp (src/regexp/regexp.go)] as Regexp
+    [text/template (src/text/template/parse.go, src/text/template/exec.go)] as TextTemplate
+    [html/template (src/html/template/template.go)] as HTMLTemplate
+  }
+  
+  package "时间和日期 (src/time/)" {
+    [time (src/time/time.go)] as Time
+    [定时器 (src/time/sleep.go)] as Sleep
+    [时区 (src/time/zoneinfo.go)] as Zone
+    [格式化 (src/time/format.go)] as TimeFormat
+  }
+  
+  package "数据库 (src/database/)" {
+    [sql (src/database/sql/sql.go)] as SQL
+    [sql/driver (src/database/sql/driver/driver.go)] as SQLDriver
+    [连接池 (src/database/sql/conn.go)] as ConnPool
+    [事务 (src/database/sql/sql.go)] as Transaction
+  }
+  
+  package "加密和安全 (src/)" {
+    [crypto (src/crypto/crypto.go)] as Crypto
+    [crypto/tls (src/crypto/tls/conn.go)] as TLS
+    [crypto/x509 (src/crypto/x509/x509.go)] as X509
+    [crypto/aes (src/crypto/aes/cipher.go)] as AES
+    [crypto/rsa (src/crypto/rsa/rsa.go)] as RSA
+    [crypto/sha256 (src/crypto/sha256/sha256.go)] as SHA256
+    [hash (src/hash/hash.go)] as Hash
+  }
+  
+  package "反射和运行时类型 (src/)" {
+    [reflect (src/reflect/value.go, src/reflect/type.go)] as Reflect
+    [unsafe (src/unsafe/unsafe.go)] as Unsafe
+  }
+  
+  package "上下文 (src/context/)" {
+    [context (src/context/context.go)] as Context
+    [WithCancel (src/context/context.go)] as WithCancel
+    [WithDeadline (src/context/context.go)] as WithDeadline
+    [WithValue (src/context/context.go)] as WithValue
+  }
+}
+
+' IO关系
+IO <-- Bufio : 实现
+IO <-- OS : 实现
+OS --> Exec : 使用
+Bytes --> IO : 实现
+
+' 同步关系
+Mutex --> Atomic : 使用
+RWMutex --> Atomic : 使用
+WaitGroup --> Atomic : 使用
+Pool --> Atomic : 使用
+
+' 网络关系
+TCP --> IP : 使用
+UDP --> IP : 使用
+HTTP --> TCP : 使用
+HTTPClient --> HTTPTransport : 使用
+HTTPTransport --> TCP : 使用
+HTTP --> URL : 使用
+
+' 编码关系
+JSON --> IO : 使用
+XML --> IO : 使用
+CSV --> IO : 使用
+
+' 文本处理关系
+Regexp --> Unicode : 使用
+TextTemplate --> Strings : 使用
+HTMLTemplate --> TextTemplate : 扩展
+
+' 数据库关系
+SQL --> SQLDriver : 使用
+SQL --> ConnPool : 包含
+SQL --> Transaction : 实现
+SQL --> Context : 使用
+
+' 加密关系
+TLS --> X509 : 使用
+TLS --> AES : 使用
+TLS --> RSA : 使用
+SHA256 --> Hash : 实现
+
+' 反射关系
+Reflect --> Unsafe : 使用
+
+' 上下文关系
+WithCancel --> Context : 实现
+WithDeadline --> Context : 实现
+WithValue --> Context : 实现
+
+note right of IO
+  IO接口:
+  - Reader/Writer基本接口
+  - 组合接口(ReadWriter等)
+  - Closer/Seeker接口
+end note
+
+note right of HTTP
+  HTTP实现:
+  - 服务器(Server)
+  - 客户端(Client)
+  - 处理器(Handler)
+  - 中间件支持
+  - HTTP/2支持
+end note
+
+note right of Reflect
+  反射实现:
+  - 类型反射(Type)
+  - 值反射(Value)
+  - 方法调用
+  - 结构体字段访问
+  - 接口检查
+end note
+
+note right of Context
+  上下文实现:
+  - 取消信号传播
+  - 超时控制
+  - 值传递
+  - 请求作用域控制
+end note
+
+@enduml

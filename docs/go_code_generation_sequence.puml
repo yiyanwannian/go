@@ -1,0 +1,117 @@
+@startuml Go代码生成时序图
+
+actor 用户
+participant "go命令\n(src/cmd/go/main.go)" as GoMain
+participant "generate命令\n(src/cmd/go/internal/generate/generate.go)" as GenerateCmd
+participant "包加载器\n(src/cmd/go/internal/load/load.go)" as Load
+participant "文件扫描器\n(src/cmd/go/internal/generate/generate.go:generate())" as FileScan
+participant "指令解析器\n(src/cmd/go/internal/generate/generate.go:run())" as DirectiveParse
+participant "命令执行器\n(src/cmd/go/internal/generate/generate.go:exec())" as CmdExec
+participant "代码生成工具\n(如src/cmd/stringer/stringer.go)" as GenTool
+participant "AST处理\n(src/go/parser/parser.go)" as Parser
+participant "代码格式化\n(src/go/format/format.go)" as Format
+participant "文件系统\n(os.WriteFile)" as FileSystem
+
+== 命令初始化阶段 ==
+
+用户 -> GoMain: 执行 "go generate [参数]"
+activate GoMain
+
+GoMain -> GenerateCmd: 调用 CmdGenerate.Run()\n(src/cmd/go/internal/generate/generate.go:runGenerate())
+activate GenerateCmd
+
+GenerateCmd -> GenerateCmd: 解析命令行参数\n(src/cmd/go/internal/generate/generate.go:runGenerate())
+note right: 处理 -run, -x, -n, -v 等标志
+
+GenerateCmd -> Load: 加载包\n(src/cmd/go/internal/load/load.go:PackagesAndErrors())
+activate Load
+Load --> GenerateCmd: 返回包列表
+deactivate Load
+
+== 文件处理阶段 ==
+
+loop 对每个包
+    GenerateCmd -> FileScan: 处理包中的Go文件\n(src/cmd/go/internal/generate/generate.go:generate())
+    activate FileScan
+    
+    FileScan -> FileScan: 读取文件内容\n(src/cmd/go/internal/generate/generate.go:generate())
+    
+    loop 对文件中的每一行
+        FileScan -> DirectiveParse: 扫描//go:generate指令\n(src/cmd/go/internal/generate/generate.go:isGoGenerate())
+        activate DirectiveParse
+        
+        alt 找到//go:generate指令
+            DirectiveParse -> DirectiveParse: 设置环境变量\n(src/cmd/go/internal/generate/generate.go:setEnv())
+            note right
+              设置:
+              $GOARCH, $GOOS, $GOFILE,
+              $GOLINE, $GOPACKAGE, $GOROOT,
+              $DOLLAR, $PATH
+            end note
+            
+            DirectiveParse -> DirectiveParse: 分割命令行\n(src/cmd/go/internal/generate/generate.go:split())
+            
+            alt 是-command指令
+                DirectiveParse -> DirectiveParse: 设置命令别名\n(src/cmd/go/internal/generate/generate.go:setShorthand())
+            else 是普通生成指令
+                DirectiveParse -> CmdExec: 执行命令\n(src/cmd/go/internal/generate/generate.go:exec())
+                activate CmdExec
+                
+                CmdExec -> CmdExec: 创建命令\n(src/cmd/go/internal/generate/generate.go:exec())
+                note right: exec.Command(path, words[1:]...)
+                
+                CmdExec -> CmdExec: 设置工作目录\n(src/cmd/go/internal/generate/generate.go:exec())
+                note right: cmd.Dir = g.dir
+                
+                CmdExec -> CmdExec: 设置环境变量\n(src/cmd/go/internal/generate/generate.go:exec())
+                note right: cmd.Env = str.StringList(cfg.OrigEnv, g.env)
+                
+                CmdExec -> GenTool: 执行生成工具\n(src/cmd/go/internal/generate/generate.go:exec())
+                activate GenTool
+            end alt
+        end alt
+        
+        DirectiveParse --> FileScan: 返回处理结果
+        deactivate DirectiveParse
+    end
+    
+    FileScan --> GenerateCmd: 返回处理结果
+    deactivate FileScan
+end
+
+== 代码生成工具执行阶段 ==
+
+GenTool -> Parser: 解析源代码\n(src/go/parser/parser.go:ParseFile())
+activate Parser
+Parser --> GenTool: 返回AST
+deactivate Parser
+
+GenTool -> GenTool: 分析AST\n(如src/cmd/stringer/stringer.go:genDecl())
+note right: 提取类型信息、常量等
+
+GenTool -> GenTool: 生成代码\n(如src/cmd/stringer/stringer.go:generate())
+note right: 构建输出代码字符串
+
+GenTool -> Format: 格式化生成的代码\n(src/go/format/format.go:Source())
+activate Format
+Format --> GenTool: 返回格式化后的代码
+deactivate Format
+
+GenTool -> FileSystem: 写入文件\n(os.WriteFile())
+activate FileSystem
+FileSystem --> GenTool: 写入完成
+deactivate FileSystem
+
+GenTool --> CmdExec: 工具执行完成
+deactivate GenTool
+
+CmdExec --> DirectiveParse: 命令执行完成
+deactivate CmdExec
+
+GenerateCmd --> GoMain: generate命令执行完成
+deactivate GenerateCmd
+
+GoMain --> 用户: 返回执行结果
+deactivate GoMain
+
+@enduml
