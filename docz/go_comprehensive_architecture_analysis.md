@@ -8,10 +8,65 @@
 
 Go语言项目采用分层架构设计，从底层到顶层分为以下几个主要层次：
 
+```mermaid
+graph TB
+    subgraph "Go语言分层架构"
+        subgraph "应用层"
+            App[用户应用程序]
+        end
+
+        subgraph "标准库层 (Standard Library Layer)"
+            StdLib[标准库API]
+            Net[网络库]
+            IO[IO库]
+            Sync[同步库]
+            Crypto[加密库]
+        end
+
+        subgraph "运行时层 (Runtime Layer)"
+            Runtime[Go运行时]
+            Scheduler[调度器]
+            GC[垃圾回收器]
+            Memory[内存管理]
+        end
+
+        subgraph "工具链层 (Toolchain Layer)"
+            Compiler[编译器]
+            Linker[链接器]
+            Tools[开发工具]
+        end
+
+        subgraph "操作系统层"
+            OS[操作系统内核]
+            Hardware[硬件平台]
+        end
+    end
+
+    App --> StdLib
+    StdLib --> Runtime
+    Runtime --> OS
+    Tools --> Runtime
+    Compiler --> Runtime
+    Linker --> OS
+    OS --> Hardware
+
+    classDef app fill:#E1F5FE,stroke:#01579B,stroke-width:2px
+    classDef stdlib fill:#F3E5F5,stroke:#4A148C,stroke-width:2px
+    classDef runtime fill:#E8F5E8,stroke:#1B5E20,stroke-width:2px
+    classDef toolchain fill:#FFF3E0,stroke:#E65100,stroke-width:2px
+    classDef system fill:#FAFAFA,stroke:#424242,stroke-width:2px
+
+    class App app
+    class StdLib,Net,IO,Sync,Crypto stdlib
+    class Runtime,Scheduler,GC,Memory runtime
+    class Compiler,Linker,Tools toolchain
+    class OS,Hardware system
+```
+
 ### 1. 工具链层 (Toolchain Layer)
 负责Go语言的编译、构建和开发工具支持，是整个生态系统的基础。
 
-### 2. 运行时层 (Runtime Layer)  
+### 2. 运行时层 (Runtime Layer)
 提供程序执行时的核心支持，包括内存管理、并发调度、垃圾回收等。
 
 ### 3. 标准库层 (Standard Library Layer)
@@ -34,6 +89,52 @@ Go语言项目采用分层架构设计，从底层到顶层分为以下几个主
 
 #### 编译器内部架构
 采用经典的编译器设计模式：
+
+```mermaid
+flowchart TD
+    A[源代码文件] --> B[词法分析器<br/>Lexer]
+    B --> C[语法分析器<br/>Parser]
+    C --> D[抽象语法树<br/>AST]
+    D --> E[类型检查器<br/>Type Checker]
+    E --> F[中间表示<br/>IR]
+    F --> G[SSA生成器<br/>SSA Generator]
+    G --> H[优化器<br/>Optimizer]
+    H --> I[代码生成器<br/>Code Generator]
+    I --> J[目标代码<br/>Object Code]
+
+    subgraph "优化阶段"
+        H1[内联优化]
+        H2[逃逸分析]
+        H3[死代码消除]
+        H4[常量折叠]
+    end
+
+    H --> H1
+    H --> H2
+    H --> H3
+    H --> H4
+
+    subgraph "平台适配"
+        I1[x86-64代码生成]
+        I2[ARM代码生成]
+        I3[WASM代码生成]
+    end
+
+    I --> I1
+    I --> I2
+    I --> I3
+
+    classDef frontend fill:#FFE4B5,stroke:#333,stroke-width:2px
+    classDef middle fill:#98FB98,stroke:#333,stroke-width:2px
+    classDef backend fill:#DDA0DD,stroke:#333,stroke-width:2px
+    classDef optimize fill:#87CEEB,stroke:#333,stroke-width:2px
+
+    class A,B,C,D,E frontend
+    class F,G middle
+    class H,I,J backend
+    class H1,H2,H3,H4,I1,I2,I3 optimize
+```
+
 - **词法分析器**: 源码标记化
 - **语法分析器**: 抽象语法树构建
 - **类型检查器**: 静态类型验证
@@ -57,6 +158,70 @@ Go语言项目采用分层架构设计，从底层到顶层分为以下几个主
 - **内存池**: 减少分配开销的对象复用
 
 #### 并发原语
+
+```mermaid
+graph TB
+    subgraph "Go并发模型 (CSP + 共享内存)"
+        subgraph "Goroutine调度"
+            G1[Goroutine 1]
+            G2[Goroutine 2]
+            G3[Goroutine 3]
+            GN[Goroutine N]
+        end
+
+        subgraph "M:N调度器"
+            M1[OS Thread M1]
+            M2[OS Thread M2]
+            P1[Processor P1]
+            P2[Processor P2]
+            Sched[全局调度器]
+        end
+
+        subgraph "通信机制"
+            Ch1[Channel 1]
+            Ch2[Channel 2]
+            Select[Select多路复用]
+            Mutex[互斥锁]
+        end
+
+        subgraph "同步原语"
+            WG[WaitGroup]
+            Once[Once]
+            Cond[Condition]
+            Atomic[原子操作]
+        end
+    end
+
+    G1 -.运行在.-> P1
+    G2 -.运行在.-> P1
+    G3 -.运行在.-> P2
+    GN -.运行在.-> P2
+
+    P1 -.绑定.-> M1
+    P2 -.绑定.-> M2
+
+    Sched -.管理.-> P1
+    Sched -.管理.-> P2
+
+    G1 -.通信.-> Ch1
+    G2 -.通信.-> Ch1
+    G3 -.通信.-> Ch2
+
+    G1 -.选择.-> Select
+    G2 -.同步.-> Mutex
+    G3 -.等待.-> WG
+
+    classDef goroutine fill:#E1F5FE,stroke:#01579B,stroke-width:2px
+    classDef scheduler fill:#E8F5E8,stroke:#1B5E20,stroke-width:2px
+    classDef communication fill:#F3E5F5,stroke:#4A148C,stroke-width:2px
+    classDef synchronization fill:#FFF3E0,stroke:#E65100,stroke-width:2px
+
+    class G1,G2,G3,GN goroutine
+    class M1,M2,P1,P2,Sched scheduler
+    class Ch1,Ch2,Select,Mutex communication
+    class WG,Once,Cond,Atomic synchronization
+```
+
 - **Channel实现**: CSP模型的核心通信机制
 - **Select实现**: 多路复用的通道操作
 - **信号量**: 底层同步原语
