@@ -1,0 +1,388 @@
+@startuml Go语言项目全面系统架构图
+
+!define FACTORY_COLOR #FFE4B5
+!define OBSERVER_COLOR #E6E6FA
+!define STRATEGY_COLOR #F0E68C
+!define ADAPTER_COLOR #DDA0DD
+!define SINGLETON_COLOR #98FB98
+!define TEMPLATE_COLOR #FFA07A
+!define DECORATOR_COLOR #87CEEB
+!define COMMAND_COLOR #F5DEB3
+
+title Go语言项目全面系统架构图
+
+package "Go语言项目 (Go Project)" {
+  
+  package "工具链层 (Toolchain Layer)" <<COMMAND_COLOR>> {
+    package "命令行工具 (src/cmd/)" {
+      [go命令 (src/cmd/go/)] as GoCmd
+      [编译器 (src/cmd/compile/)] as Compiler
+      [链接器 (src/cmd/link/)] as Linker
+      [汇编器 (src/cmd/asm/)] as Assembler
+      [格式化工具 (src/cmd/gofmt/)] as Fmt
+      [静态分析 (src/cmd/vet/)] as Vet
+      [文档工具 (src/cmd/doc/)] as Doc
+      [测试工具 (src/cmd/go/test)] as Test
+    }
+    
+    package "编译器内部 (src/cmd/compile/internal/)" <<FACTORY_COLOR>> {
+      [词法分析器 (syntax/scanner.go)] as Lexer
+      [语法分析器 (syntax/parser.go)] as Parser
+      [类型检查器 (types2/)] as TypeChecker
+      [中间表示 (ir/)] as IR
+      [SSA生成器 (ssa/)] as SSAGen
+      [代码生成器 (gen/)] as CodeGen
+      [内联优化 (inline/)] as Inliner
+      [逃逸分析 (escape/)] as EscapeAnalyzer
+      [优化器 (opt/)] as Optimizer
+    }
+    
+    package "链接器内部 (src/cmd/link/internal/)" <<STRATEGY_COLOR>> {
+      [符号处理器 (sym/)] as SymProcessor
+      [目标文件加载器 (loader/)] as ObjLoader
+      [重定位处理器 (ld/reloc.go)] as Relocator
+      [可执行文件生成器 (ld/outbuf.go)] as ExeGenerator
+      [调试信息处理 (dwarf/)] as DwarfProcessor
+    }
+  }
+  
+  package "运行时层 (Runtime Layer)" <<SINGLETON_COLOR>> {
+    package "核心运行时 (src/runtime/)" {
+      [运行时入口 (rt0_*.s, asm_*.s)] as RuntimeEntry
+      [调度器 (proc.go)] as Scheduler
+      [内存分配器 (malloc.go)] as MemAllocator
+      [垃圾回收器 (mgc.go)] as GarbageCollector
+      [栈管理器 (stack.go)] as StackManager
+      [类型系统 (type.go)] as TypeSystem
+      [信号处理器 (signal_*.go)] as SignalHandler
+      [网络轮询器 (netpoll_*.go)] as NetPoller
+    }
+    
+    package "内存管理 (Memory Management)" <<TEMPLATE_COLOR>> {
+      [堆管理器 (mheap.go)] as HeapManager
+      [写屏障 (mbarrier.go)] as WriteBarrier
+      [标记清除 (mgcsweep.go)] as MarkSweep
+      [内存回收 (mgcscavenge.go)] as Scavenger
+      [对象分配 (malloc.go)] as ObjectAllocator
+      [大对象分配 (mheap.go)] as LargeObjectAllocator
+    }
+    
+    package "并发原语 (Concurrency Primitives)" <<OBSERVER_COLOR>> {
+      [Goroutine管理 (proc.go)] as GoroutineManager
+      [Channel实现 (chan.go)] as ChannelImpl
+      [Select实现 (select.go)] as SelectImpl
+      [信号量 (sema.go)] as Semaphore
+      [定时器 (time.go)] as Timer
+      [协程池 (proc.go)] as GoroutinePool
+    }
+  }
+  
+  package "标准库层 (Standard Library Layer)" <<ADAPTER_COLOR>> {
+    package "IO抽象层 (src/io/)" {
+      [IO接口 (io.go)] as IOInterface
+      [缓冲IO (bufio/)] as BufferedIO
+      [字节操作 (bytes/)] as ByteOps
+      [文件系统 (os/)] as FileSystem
+      [进程执行 (os/exec/)] as ProcessExec
+    }
+    
+    package "网络层 (src/net/)" {
+      [网络接口 (net.go)] as NetInterface
+      [TCP实现 (tcpsock.go)] as TCPImpl
+      [UDP实现 (udpsock.go)] as UDPImpl
+      [HTTP服务器 (http/server.go)] as HTTPServer
+      [HTTP客户端 (http/client.go)] as HTTPClient
+      [DNS解析器 (dnsclient.go)] as DNSResolver
+    }
+    
+    package "同步原语 (src/sync/)" {
+      [互斥锁 (mutex.go)] as Mutex
+      [读写锁 (rwmutex.go)] as RWMutex
+      [等待组 (waitgroup.go)] as WaitGroup
+      [条件变量 (cond.go)] as Condition
+      [单次执行 (once.go)] as Once
+      [对象池 (pool.go)] as Pool
+      [并发映射 (map.go)] as ConcurrentMap
+      [原子操作 (atomic/)] as AtomicOps
+    }
+    
+    package "编码层 (src/encoding/)" {
+      [JSON编解码 (json/)] as JSONCodec
+      [XML编解码 (xml/)] as XMLCodec
+      [Base64编码 (base64/)] as Base64Codec
+      [CSV处理 (csv/)] as CSVProcessor
+      [二进制编码 (binary/)] as BinaryCodec
+    }
+    
+    package "加密层 (src/crypto/)" {
+      [哈希算法 (sha256/, md5/)] as HashAlgorithms
+      [对称加密 (aes/, des/)] as SymmetricCrypto
+      [非对称加密 (rsa/, ecdsa/)] as AsymmetricCrypto
+      [TLS实现 (tls/)] as TLSImpl
+      [随机数生成 (rand/)] as RandomGenerator
+    }
+    
+    package "反射系统 (src/reflect/)" {
+      [类型反射 (type.go)] as TypeReflection
+      [值反射 (value.go)] as ValueReflection
+      [方法调用 (value.go)] as MethodInvocation
+      [结构体操作 (type.go)] as StructOps
+    }
+  }
+  
+  package "内部模块层 (Internal Modules)" <<DECORATOR_COLOR>> {
+    package "内部工具 (src/internal/)" {
+      [ABI定义 (abi/)] as ABIDefinition
+      [构建配置 (buildcfg/)] as BuildConfig
+      [实验特性 (goexperiment/)] as ExperimentalFeatures
+      [跟踪系统 (trace/)] as TraceSystem
+      [性能分析 (pprof/)] as ProfilingSystem
+      [测试框架 (testenv/)] as TestFramework
+    }
+    
+    package "插件系统 (src/plugin/)" {
+      [插件加载器 (plugin.go)] as PluginLoader
+      [符号解析器 (plugin_dlopen.go)] as SymbolResolver
+      [动态链接 (plugin_dlopen.go)] as DynamicLinker
+    }
+  }
+}
+
+' 工具链内部关系
+GoCmd --> Compiler : 调用编译
+GoCmd --> Linker : 调用链接
+GoCmd --> Assembler : 调用汇编
+GoCmd --> Fmt : 调用格式化
+GoCmd --> Vet : 调用静态分析
+GoCmd --> Test : 调用测试
+
+Compiler --> Lexer : 词法分析
+Lexer --> Parser : 语法分析
+Parser --> TypeChecker : 类型检查
+TypeChecker --> IR : 生成中间表示
+IR --> SSAGen : 生成SSA
+SSAGen --> CodeGen : 代码生成
+IR --> Inliner : 内联优化
+IR --> EscapeAnalyzer : 逃逸分析
+SSAGen --> Optimizer : 优化
+
+Linker --> SymProcessor : 符号处理
+Linker --> ObjLoader : 加载目标文件
+Linker --> Relocator : 重定位
+Linker --> ExeGenerator : 生成可执行文件
+Linker --> DwarfProcessor : 调试信息
+
+' 运行时内部关系
+RuntimeEntry --> Scheduler : 启动调度器
+Scheduler --> GoroutineManager : 管理协程
+Scheduler --> MemAllocator : 内存分配
+MemAllocator --> HeapManager : 堆管理
+MemAllocator --> ObjectAllocator : 对象分配
+GarbageCollector --> WriteBarrier : 写屏障
+GarbageCollector --> MarkSweep : 标记清除
+GarbageCollector --> Scavenger : 内存回收
+
+Scheduler --> NetPoller : 网络轮询
+NetPoller --> SignalHandler : 信号处理
+GoroutineManager --> ChannelImpl : 通道通信
+GoroutineManager --> SelectImpl : 选择操作
+GoroutineManager --> Semaphore : 信号量同步
+
+' 标准库关系
+IOInterface --> BufferedIO : 缓冲实现
+IOInterface --> FileSystem : 文件系统实现
+FileSystem --> ProcessExec : 进程执行
+
+NetInterface --> TCPImpl : TCP实现
+NetInterface --> UDPImpl : UDP实现
+NetInterface --> HTTPServer : HTTP服务
+NetInterface --> HTTPClient : HTTP客户端
+NetInterface --> DNSResolver : DNS解析
+
+Mutex --> AtomicOps : 原子操作
+RWMutex --> AtomicOps : 原子操作
+WaitGroup --> AtomicOps : 原子操作
+Pool --> AtomicOps : 原子操作
+
+' 跨层关系
+Compiler --> TypeSystem : 类型信息
+Linker --> RuntimeEntry : 链接运行时
+HTTPServer --> NetPoller : 网络IO
+HTTPClient --> NetPoller : 网络IO
+Mutex --> Scheduler : 调度集成
+ChannelImpl --> Scheduler : 调度集成
+
+' 插件系统关系
+PluginLoader --> SymbolResolver : 符号解析
+PluginLoader --> DynamicLinker : 动态链接
+PluginLoader --> TypeSystem : 类型检查
+
+note right of GoCmd
+  命令模式实现:
+  - 统一的命令接口
+  - 可扩展的子命令
+  - 参数解析和验证
+  - 错误处理和报告
+end note
+
+note right of Compiler
+  工厂模式应用:
+  - 词法分析器工厂
+  - 语法分析器工厂
+  - 代码生成器工厂
+  - 平台特定实现工厂
+end note
+
+note right of Scheduler
+  单例模式实现:
+  - 全局调度器实例
+  - 线程安全访问
+  - 资源统一管理
+  - 状态一致性保证
+end note
+
+note right of NetPoller
+  观察者模式应用:
+  - 事件通知机制
+  - IO就绪通知
+  - 异步事件处理
+  - 回调函数管理
+end note
+
+note right of TypeChecker
+  策略模式实现:
+  - 多种类型检查策略
+  - 泛型类型推导
+  - 接口实现检查
+  - 类型转换规则
+end note
+
+note right of IOInterface
+  适配器模式应用:
+  - 统一IO接口
+  - 不同实现适配
+  - 兼容性保证
+  - 接口转换
+end note
+
+note right of CodeGen
+  模板方法模式:
+  - 代码生成模板
+  - 平台特定实现
+  - 优化策略模板
+  - 指令选择模板
+end note
+
+note right of PluginLoader
+  装饰器模式实现:
+  - 功能动态扩展
+  - 插件包装器
+  - 接口增强
+  - 运行时装饰
+end note
+
+' 性能优化策略标注
+note top of GarbageCollector
+  性能优化策略:
+  - 并发标记清除
+  - 写屏障优化
+  - 增量回收
+  - 低延迟设计
+  - 三色标记算法
+end note
+
+note top of Scheduler
+  调度器优化:
+  - 工作窃取算法
+  - M:N线程模型
+  - 协作式抢占
+  - 系统调用优化
+  - NUMA感知调度
+end note
+
+note top of MemAllocator
+  内存分配优化:
+  - 分级分配策略
+  - 本地缓存机制
+  - 大对象直接分配
+  - 内存池复用
+  - 零拷贝优化
+end note
+
+note top of NetPoller
+  网络IO优化:
+  - 基于epoll/kqueue
+  - 边缘触发模式
+  - 批量事件处理
+  - 零拷贝网络IO
+  - 连接池管理
+end note
+
+note top of ChannelImpl
+  通道优化:
+  - 无锁快速路径
+  - 批量传输优化
+  - 内存屏障最小化
+  - 缓存友好设计
+  - 死锁检测
+end note
+
+' 扩展性设计标注
+note bottom of ABIDefinition
+  扩展性设计:
+  - 稳定的ABI接口
+  - 版本兼容性
+  - 平台抽象层
+  - 插件化架构
+  - 配置驱动设计
+end note
+
+note bottom of ExperimentalFeatures
+  实验特性管理:
+  - 特性开关机制
+  - 渐进式启用
+  - 向后兼容保证
+  - 性能影响评估
+  - 社区反馈集成
+end note
+
+note bottom of TraceSystem
+  可观测性设计:
+  - 分布式跟踪
+  - 性能指标收集
+  - 事件时间线
+  - 调用栈分析
+  - 资源使用监控
+end note
+
+' 架构决策说明
+note as ArchDecisions
+  关键架构决策:
+
+  1. **编译时优化 vs 运行时灵活性**
+     - 静态编译提供性能优势
+     - 运行时反射保持灵活性
+     - 接口动态分发平衡两者
+
+  2. **内存管理策略**
+     - 垃圾回收 vs 手动管理
+     - 并发回收减少停顿
+     - 分代假设优化年轻对象
+
+  3. **并发模型选择**
+     - CSP模型 vs 共享内存
+     - Goroutine轻量级线程
+     - Channel通信避免竞态
+
+  4. **类型系统设计**
+     - 静态类型 + 接口多态
+     - 结构化类型 vs 名义类型
+     - 泛型延迟引入保持简洁
+
+  5. **标准库组织**
+     - 最小化依赖
+     - 接口优先设计
+     - 组合优于继承
+end note
+
+@enduml

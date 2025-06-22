@@ -1,0 +1,216 @@
+@startuml Go通道操作时序图
+
+autonumber
+
+' 参与者定义
+participant "用户代码" as User
+participant "通道\n(src/runtime/chan.go)" as Channel
+participant "发送队列\n(src/runtime/chan.go)" as SendQ
+participant "接收队列\n(src/runtime/chan.go)" as RecvQ
+participant "缓冲区\n(src/runtime/chan.go)" as Buffer
+participant "调度器\n(src/runtime/proc.go)" as Scheduler
+participant "G(goroutine)\n(src/runtime/proc.go)" as G
+
+' 创建通道
+User -> Channel: make(chan T, size)\n(src/runtime/chan.go:makechan)
+activate Channel
+
+Channel -> Channel: 分配内存\n(src/runtime/chan.go:makechan)
+Channel -> Buffer: 初始化缓冲区\n(src/runtime/chan.go:makechan)
+activate Buffer
+Buffer --> Channel: 初始化完成
+deactivate Buffer
+
+Channel -> SendQ: 初始化发送队列\n(src/runtime/chan.go:makechan)
+activate SendQ
+SendQ --> Channel: 初始化完成
+deactivate SendQ
+
+Channel -> RecvQ: 初始化接收队列\n(src/runtime/chan.go:makechan)
+activate RecvQ
+RecvQ --> Channel: 初始化完成
+deactivate RecvQ
+
+Channel --> User: 返回通道
+deactivate Channel
+
+' 发送操作 - 无缓冲通道
+User -> Channel: ch <- v\n(src/runtime/chan.go:chansend)
+activate Channel
+
+Channel -> RecvQ: 检查接收队列\n(src/runtime/chan.go:chansend)
+activate RecvQ
+
+alt 接收队列不为空 (有G等待接收)
+  RecvQ -> G: 获取等待的G\n(src/runtime/chan.go:send)
+  activate G
+  RecvQ --> Channel: 返回等待的G
+  deactivate RecvQ
+  
+  Channel -> G: 直接将数据发送给G\n(src/runtime/chan.go:send)
+  Channel -> Scheduler: 将接收方G标记为可运行\n(src/runtime/chan.go:goready)
+  activate Scheduler
+  Scheduler --> Channel: 标记完成
+  deactivate Scheduler
+  
+  Channel --> User: 发送完成
+  deactivate Channel
+  
+else 接收队列为空 (无G等待接收)
+  RecvQ --> Channel: 返回nil
+  deactivate RecvQ
+
+  alt 缓冲区有空间 (c.qcount < c.dataqsiz)
+    Channel -> Buffer: 将数据写入缓冲区\n(src/runtime/chan.go:chanbuf)
+    activate Buffer
+    Channel -> Channel: 更新sendx索引\n(src/runtime/chan.go:chansend)
+    Channel -> Channel: 增加qcount计数\n(src/runtime/chan.go:chansend)
+    Buffer --> Channel: 写入完成
+    deactivate Buffer
+    Channel --> User: 发送完成
+    deactivate Channel
+
+  else 缓冲区已满 (需要阻塞)
+    Channel -> G: 创建sudog结构\n(src/runtime/chan.go:acquireSudog)
+    activate G
+    Channel -> SendQ: 将当前G加入发送队列\n(src/runtime/chan.go:enqueue)
+    activate SendQ
+    SendQ --> Channel: 加入完成
+    deactivate SendQ
+
+    Channel -> Scheduler: 阻塞当前G\n(src/runtime/proc.go:gopark)
+    activate Scheduler
+    Scheduler -> Scheduler: 将G状态设为_Gwaiting\n(src/runtime/proc.go:park_m)
+    Scheduler -> Scheduler: 调度其他G运行\n(src/runtime/proc.go:schedule)
+    Scheduler --> Channel: G已阻塞
+    deactivate Scheduler
+    deactivate Channel
+
+    note over G: G在此处被阻塞，等待接收方
+
+    ' 当有接收方时，G被唤醒
+    Scheduler -> G: 唤醒发送方G\n(src/runtime/proc.go:goready)
+    activate Scheduler
+    Scheduler -> Scheduler: 将G状态设为_Grunnable\n(src/runtime/proc.go:ready)
+    Scheduler -> Scheduler: 将G放入运行队列\n(src/runtime/proc.go:runqput)
+    Scheduler --> G: G已就绪
+    deactivate Scheduler
+    G --> User: 发送完成
+    deactivate G
+  end
+end
+
+' 接收操作 - 无缓冲通道
+User -> Channel: v := <-ch\n(src/runtime/chan.go:chanrecv)
+activate Channel
+
+Channel -> SendQ: 检查发送队列\n(src/runtime/chan.go:chanrecv)
+activate SendQ
+
+alt 发送队列不为空 (有G等待发送)
+  SendQ -> G: 获取等待的G\n(src/runtime/chan.go:dequeue)
+  activate G
+  SendQ --> Channel: 返回等待的G
+  deactivate SendQ
+
+  Channel -> G: 直接从发送方G接收数据\n(src/runtime/chan.go:recv)
+  Channel -> Scheduler: 将发送方G标记为可运行\n(src/runtime/chan.go:goready)
+  activate Scheduler
+  Scheduler --> Channel: 标记完成
+  deactivate Scheduler
+
+  Channel --> User: 接收完成
+  deactivate Channel
+  deactivate G
+
+else 发送队列为空
+  SendQ --> Channel: 返回nil
+  deactivate SendQ
+
+  alt 缓冲区有数据 (c.qcount > 0)
+    Channel -> Buffer: 从缓冲区读取数据\n(src/runtime/chan.go:chanbuf)
+    activate Buffer
+    Channel -> Channel: 更新recvx索引\n(src/runtime/chan.go:chanrecv)
+    Channel -> Channel: 减少qcount计数\n(src/runtime/chan.go:chanrecv)
+    Buffer --> Channel: 读取完成
+    deactivate Buffer
+    Channel --> User: 接收完成
+    deactivate Channel
+
+  else 缓冲区为空 (需要阻塞)
+    Channel -> G: 创建sudog结构\n(src/runtime/chan.go:acquireSudog)
+    activate G
+    Channel -> RecvQ: 将当前G加入接收队列\n(src/runtime/chan.go:enqueue)
+    activate RecvQ
+    RecvQ --> Channel: 加入完成
+    deactivate RecvQ
+
+    Channel -> Scheduler: 阻塞当前G\n(src/runtime/proc.go:gopark)
+    activate Scheduler
+    Scheduler -> Scheduler: 将G状态设为_Gwaiting\n(src/runtime/proc.go:park_m)
+    Scheduler -> Scheduler: 调度其他G运行\n(src/runtime/proc.go:schedule)
+    Scheduler --> Channel: G已阻塞
+    deactivate Scheduler
+    deactivate Channel
+
+    note over G: G在此处被阻塞，等待发送方
+
+    ' 当有发送方时，G被唤醒
+    Scheduler -> G: 唤醒接收方G\n(src/runtime/proc.go:goready)
+    activate Scheduler
+    Scheduler -> Scheduler: 将G状态设为_Grunnable\n(src/runtime/proc.go:ready)
+    Scheduler -> Scheduler: 将G放入运行队列\n(src/runtime/proc.go:runqput)
+    Scheduler --> G: G已就绪
+    deactivate Scheduler
+    G --> User: 接收完成
+    deactivate G
+  end
+end
+
+' 关闭通道操作
+User -> Channel: close(ch)\n(src/runtime/chan.go:closechan)
+activate Channel
+
+Channel -> Channel: 检查通道状态\n(src/runtime/chan.go:closechan)
+Channel -> Channel: 设置closed标志\n(src/runtime/chan.go:closechan)
+
+' 唤醒所有等待的接收方
+loop 遍历接收队列
+  Channel -> RecvQ: 获取等待的接收方G\n(src/runtime/chan.go:dequeue)
+  activate RecvQ
+  RecvQ -> G: 返回等待的G
+  activate G
+  RecvQ --> Channel: 返回G
+  deactivate RecvQ
+
+  Channel -> Scheduler: 唤醒接收方G\n(src/runtime/proc.go:goready)
+  activate Scheduler
+  Scheduler -> Scheduler: 将G状态设为_Grunnable\n(src/runtime/proc.go:ready)
+  Scheduler --> Channel: G已就绪
+  deactivate Scheduler
+  deactivate G
+end
+
+' 唤醒所有等待的发送方 (会panic)
+loop 遍历发送队列
+  Channel -> SendQ: 获取等待的发送方G\n(src/runtime/chan.go:dequeue)
+  activate SendQ
+  SendQ -> G: 返回等待的G
+  activate G
+  SendQ --> Channel: 返回G
+  deactivate SendQ
+
+  Channel -> Scheduler: 唤醒发送方G\n(src/runtime/proc.go:goready)
+  activate Scheduler
+  Scheduler -> Scheduler: 将G状态设为_Grunnable\n(src/runtime/proc.go:ready)
+  Scheduler --> Channel: G已就绪
+  deactivate Scheduler
+
+  note over G: 发送方G被唤醒后会panic\n"send on closed channel"
+  deactivate G
+end
+
+Channel --> User: 关闭完成
+deactivate Channel
+
+@enduml

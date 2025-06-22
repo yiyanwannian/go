@@ -1,0 +1,113 @@
+@startuml Go通道内部结构图
+
+!define RECTANGLE class
+
+' 定义颜色主题
+!define PRIMARY_COLOR #E1F5FE
+!define SECONDARY_COLOR #FFF3E0
+!define ACCENT_COLOR #F3E5F5
+!define WARNING_COLOR #FFEBEE
+
+' hchan 主结构
+RECTANGLE hchan <<通道主结构>> {
+  +qcount: uint
+  +dataqsiz: uint
+  +buf: unsafe.Pointer
+  +elemsize: uint16
+  +closed: uint32
+  +timer: *timer
+  +elemtype: *_type
+  +sendx: uint
+  +recvx: uint
+  +recvq: waitq
+  +sendq: waitq
+  +lock: mutex
+  --
+  note: "位于 src/runtime/chan.go"
+}
+
+' 等待队列结构
+RECTANGLE waitq <<等待队列>> {
+  +first: *sudog
+  +last: *sudog
+  --
+  +enqueue(sgp *sudog)
+  +dequeue() *sudog
+  --
+  note: "双向链表结构"
+}
+
+' sudog 结构
+RECTANGLE sudog <<等待节点>> {
+  +g: *g
+  +next: *sudog
+  +prev: *sudog
+  +elem: unsafe.Pointer
+  +c: *hchan
+  +success: bool
+  +waitlink: *sudog
+  --
+  note: "表示等待中的goroutine"
+}
+
+' goroutine 结构
+RECTANGLE g <<goroutine>> {
+  +atomicstatus: atomic.Uint32
+  +stack: stack
+  +m: *m
+  +waiting: *sudog
+  +param: unsafe.Pointer
+  +waitreason: waitReason
+  --
+  note: "goroutine 控制块"
+}
+
+' 缓冲区
+RECTANGLE "循环缓冲区" as buffer <<缓冲区>> {
+  [0] element
+  [1] element
+  [2] element
+  ...
+  [dataqsiz-1] element
+  --
+  note: "环形数组，大小为dataqsiz"
+}
+
+' 关系连接
+hchan ||--|| waitq : "recvq\n接收等待队列"
+hchan ||--|| waitq : "sendq\n发送等待队列"
+hchan ||--o buffer : "buf\n指向缓冲区"
+
+waitq ||--o{ sudog : "管理等待的\ngoroutine"
+sudog ||--|| g : "关联的\ngoroutine"
+sudog ||--|| hchan : "等待的\n通道"
+
+' 添加注释框
+note top of hchan : **通道核心数据结构**\n• qcount: 当前队列中的元素数量\n• dataqsiz: 缓冲区容量\n• sendx/recvx: 发送/接收索引\n• closed: 关闭状态标志
+
+note right of waitq : **等待队列管理**\n• 使用双向链表\n• FIFO 顺序处理\n• 线程安全操作
+
+note bottom of sudog : **等待节点详情**\n• elem: 指向要发送/接收的数据\n• success: 操作是否成功完成\n• 支持 select 多路复用
+
+note left of buffer : **环形缓冲区**\n• 固定大小数组\n• sendx 指向下一个写入位置\n• recvx 指向下一个读取位置\n• 当索引到达末尾时回绕到0
+
+' 状态说明
+note as N1
+  **Goroutine 状态转换**
+  • _Grunnable: 可运行
+  • _Grunning: 正在运行  
+  • _Gwaiting: 等待中
+  • _Gdead: 已结束
+end note
+
+' 操作流程说明
+note as N2
+  **通道操作流程**
+  1. 获取通道锁
+  2. 检查对应等待队列
+  3. 处理缓冲区操作
+  4. 必要时阻塞goroutine
+  5. 释放锁并调度
+end note
+
+@enduml
